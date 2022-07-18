@@ -1,0 +1,657 @@
+---
+title: "Get HUC-12 Codes and Elevations for All Point Sources"
+author: Lindsay Poirier
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+The purpose of the code presented in this document is to compose the final datasets that will be used to analyze carceral facility proximity to potential PFAS sites. Towards this end, the code:
+
+1. Loads source datasets and transforms them to a common CRS (4269)
+2. Determines which watershed boundary (HUC-12) each facility in the source datasets geo-spatially intersect with
+3. Determines the elevation of each facility in the source datasets via the USGS Elevation Point Query Service
+4. Saves all new datasets as .gpkg files for use in HUC_analysis.Rmd
+
+> Notes: New files are saved often throughout the code to prevent having to re-execute computationally heavy areas should RStudio get hung up. All files that are unnecessary for HUC_analysis.Rmd are unlinked eventually. 
+
+## Load Packages
+
+```{r}
+library(tidyverse)
+library(sf)
+library(rgeos)
+library(readxl)
+library(elevatr)
+```
+
+## Load Source Datasets
+
+### Carceral Facilities
+
+> Source: Department of Homeland Security. "Prison Boundaries." Homeland Infrastructure Foundation Level Data, July 7, 2020. [https://hifld-geoplatform.opendata.arcgis.com/datasets/geoplatform::prison-boundaries/about](https://hifld-geoplatform.opendata.arcgis.com/datasets/geoplatform::prison-boundaries/about)
+
+```{r}
+pb_sf <- st_read("source_datasets/Prison_Boundaries-shp/Prison_Boundaries.shp") %>%
+  st_transform(crs = 4269) %>%
+  st_transform(crs = 32617) %>% #convert to utm for calculating centroids
+  st_centroid() %>% #centroids from original multipolygons
+  st_transform(crs = 4269) #back to 4269
+```
+
+### Airports
+
+> Source: Federal Aviation Administration. "Part 139 Status Certification List." United States Department of Transportation, August 18, 2021. [https://www.faa.gov/airports/airport_safety/part139_cert/](https://www.faa.gov/airports/airport_safety/part139_cert/)
+
+```{r}
+part139 <- read_excel("source_datasets/part139-cert-status-table.xlsx", 
+    skip = 1) %>%
+  rename(loc_id = `Airport Identifier (Loc Id)`)
+
+airports_sf <- st_read("source_datasets/Aircraft_Landing_Facilities/Aircraft_Landing_Facilities.shp") %>%
+  st_transform(airports, crs = 4269) %>%
+  inner_join(part139, by = c("loc_id" = "loc_id")) %>% 
+  select(-elevation) #elevation is removed because we are going to add elevation via the USGS Elevation Point Query Service later
+```
+
+### Wastewater Treatment Plants
+
+> Source: Environmental Protection Agency. "Clean Watersheds Needs Survey Data and Reports." 2012. [https://ordspub.epa.gov/ords/cwns2012](https://ordspub.epa.gov/ords/cwns2012)
+
+Two tables in this data were converted to CSV via the MDB ACCDB Viewer Application - one outlining details about facilities, and another outlining discharges methods from those facilities. We removed facilities with unknown geographic coordinates, along with facilities that discharge via a Deep Well or "Overland Flow, No Discharge."
+
+```{r}
+wwtp_discharge_table <- read.csv("source_datasets/wwtp/SUMMARY_DISCHARGE.csv")
+
+#This code block removes empty geometries and standardizes, LAT/LONG columns, and removes facilities in which the coordinate system is unknown. It also joins the facilities table with the discharge methods table to filter out facilities that discharge via a deep well or overland flow, no discharge. Facilities may have multiple discharge methods, creating duplicates of facilities in the join process. We remove added columns after filtering and return distinct rows to ensure we don't end up with duplicate facilities. 
+
+wwtp_sf <- read.csv("source_datasets/wwtp/CWNS_FACILITY.csv") %>%
+  filter(LATITUDE != "" | LONGITUDE != "") %>% 
+  mutate(LATITUDE = ifelse(endsWith(LATITUDE, "S"),
+                           str_sub(LATITUDE, end = -2) %>% as.numeric() * -1,
+                           str_sub(LATITUDE, end = -2) %>% as.numeric()),
+         LONGITUDE = ifelse(endsWith(LONGITUDE, "W"),  
+                           str_sub(LONGITUDE, end = -2) %>% as.numeric() * -1,
+                           str_sub(LONGITUDE, end = -2) %>% as.numeric())) %>%
+  filter(!HORIZONTAL_COORDINATE_DATUM %in% c("Unknown","")) %>% 
+  mutate(INDEX = row_number()) %>% 
+  left_join(wwtp_discharge_table, by = "CWNS_NUMBER") %>% 
+  filter(!DISCHARGE_METHOD %in% c("Deep Well","Overland Flow, No Discharge")) %>% 
+  select(-c(DISCHARGE_METHOD:PROJ_DISCHARGE_TO_FACILITY)) %>% 
+  distinct()
+
+#Coordinates were reported via three different coordinate systems. We converted them all to 4269. 
+
+wwtp_sf_nad_27 <- wwtp_sf %>%
+  filter(HORIZONTAL_COORDINATE_DATUM == "North American Datum of 1927") %>%
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4267, na.fail = FALSE) %>%
+  st_transform(crs = 4269)
+
+wwtp_sf_wgs_84 <- wwtp_sf %>%
+  filter(HORIZONTAL_COORDINATE_DATUM == "World Geodetic System of 1984") %>%
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4326, na.fail = FALSE) %>%
+  st_transform(crs = 4269)
+
+wwtp_sf_nad_83 <- wwtp_sf %>%
+  filter(HORIZONTAL_COORDINATE_DATUM == "North American Datum of 1983") %>%
+  st_as_sf(coords = c("LONGITUDE", "LATITUDE"), crs = 4269, na.fail = FALSE)
+
+wwtp_sf <- rbind(wwtp_sf_nad_27, wwtp_sf_wgs_84, wwtp_sf_nad_83) %>%
+  arrange(INDEX) %>%
+  select(-INDEX)
+
+rm(wwtp_sf_nad_27, wwtp_sf_wgs_84, wwtp_sf_nad_83)
+```
+
+### NAICS Facilities and Landfills
+
+> Source: Environmental Protection Agency. "Facility Registry Service." [https://www.epa.gov/frs](https://www.epa.gov/frs); Facilities were filtered in the FRS by the corresponding NAICS code.
+
+```{r}
+
+#FRS data will include multiple rows for the same facility when it is regulated by different EPA programs. After filtering out facilities with empty geometries, we group common registry IDs and subset to the first row to ensure that we don't end up with duplicate facilities.
+
+naics_313_sf <- read.csv("source_datasets/naics/naics_313.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+naics_322_sf <- read.csv("source_datasets/naics/naics_322.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+naics_323_sf <- read.csv("source_datasets/naics/naics_323.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+naics_324_sf <- read.csv("source_datasets/naics/naics_324.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+naics_3255_sf <- read.csv("source_datasets/naics/naics_3255.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+naics_32591_sf <- read.csv("source_datasets/naics/naics_32591.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+naics_3328_sf <- read.csv("source_datasets/naics/naics_3328.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+naics_3344_sf <- read.csv("source_datasets/naics/naics_3344.CSV") %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+
+landfills_sf <- read.csv("source_datasets/naics/naics_562212.CSV")  %>%
+  filter(!is.na(LATITUDE83) | !is.na(LONGITUDE83)) %>%
+  group_by(REGISTRY_ID) %>%
+  filter(row_number() == 1) %>%
+  ungroup() %>%
+  st_as_sf(coords = c("LONGITUDE83", "LATITUDE83"), crs = 4269, na.fail = FALSE)
+```
+
+### Miltiary Bases
+
+> Source: Office of the Assistant Secretary of Defense for Sustainment. "Geospatial Information for U.S. Military Installations, Ranges, and Training Areas." Defense Installations Spatial Data Infrastructure (DISDI), 2020. [https://www.acq.osd.mil/eie/BSI/BEI_DISDI.html](https://www.acq.osd.mil/eie/BSI/BEI_DISDI.html)
+
+```{r}
+military_bases_sf <- st_read("source_datasets/installations_ranges/FY19_MIRTA_Points.shp") %>%
+  st_transform(military_bases, crs = 4269)
+```
+
+### BRAC
+
+> Source: Environmental Protection Agency. "Base Realignment and Closure Act (BRAC) Sites." [https://www.epa.gov/fedfacts/base-realignment-and-closure-act-brac-sites](https://www.epa.gov/fedfacts/base-realignment-and-closure-act-brac-sites); Facilities that overlapped geospatially with U.S. Military Installations, Ranges, and Training Area were excluded.
+
+```{r}
+brac_sf <- read_excel("source_datasets/brac.xlsx") %>%
+  rowid_to_column("ID") %>%
+  filter(!is.na(Latitude...9)) %>%
+  st_as_sf(coords = c("Longitude...10", "Latitude...9"), crs = 4326, na.fail = FALSE) %>%
+  st_transform(crs = 4269)
+```
+
+### FUDS
+
+> Source: Department of Homeland Security. "Formerly Used Defense Sites (FUDS) Public Properties." Homeland Infrastructure Foundation Level Data, August 21, 2021. [https://hifld-geoplatform.opendata.arcgis.com/datasets/geoplatform::formerly-used-defense-sites-fuds-public-property-boundaries/about](https://hifld-geoplatform.opendata.arcgis.com/datasets/geoplatform::formerly-used-defense-sites-fuds-public-property-boundaries/about)
+
+```{r}
+fuds_sf <- st_read("source_datasets/Formerly_Used_Defense_Sites_(FUDS)_Public_Property_Boundaries/Formerly_Used_Defense_Sites_(FUDS)_Public_Property_Boundaries.shp") %>%
+  st_transform(crs = 4269) %>%
+  st_transform(crs = 32617) %>% 
+  st_centroid() %>% 
+  st_transform(crs = 4269) %>% 
+  filter(!st_is_empty(.))
+```
+
+## Summaries of facility totals
+
+### How many facilities were analyzed in each category?
+
+This code block produces a table listing the number of facilities that were analyzed in each category. There were a number of facilities in the EPA's Facility Registry Service that either did not pass a geo-coding quality assurance test or were geo-coded based on an approximated location with increasingly less specificity. The EPA assigned an accuracy score to each facility (in meters) as an expression of the degree of accuracy of the recorded coordinates. Lower accuracy scores represented more accurately geo-coded coordinates. Scores were assigned first based on the specificity of the collection method. For instance, coordinates determined by street addresses were considered more accurate than those determined by intersection, and coordinates determined by intersections were considered more accurate than those determined by zip codes. After this, QA checks were run to make sure the derived coordinates were in the same zip code, city, county, and state as the reported facility. Accuracy scores were increased (representing less accuracy) when a facility failed a QA check. We selected 1000 meters or less as a threshold in order to exclude facilities that failed quality assurance checks and to exclude facilities that were geo-coded based on a location with less specificity than a street with only one block. For more information see: [https://www.epa.gov/system/files/documents/2021-08/facility-registry-service-best-pick-processing-v-2.0.pdf](https://www.epa.gov/system/files/documents/2021-08/facility-registry-service-best-pick-processing-v-2.0.pdf)
+
+```{r}
+naics_rows <- 
+  nrow(naics_313_sf) + 
+  nrow(naics_322_sf) + 
+  nrow(naics_323_sf) + 
+  nrow(naics_324_sf) + 
+  nrow(naics_3255_sf) + 
+  nrow(naics_32591_sf) + 
+  nrow(naics_3328_sf) + 
+  nrow(naics_3344_sf)
+
+naics_rows_confident_geocoding <- 
+  nrow(naics_313_sf %>% filter(ACCURACY_SCORE <= 1000)) + 
+  nrow(naics_322_sf %>% filter(ACCURACY_SCORE <= 1000)) + 
+  nrow(naics_323_sf %>% filter(ACCURACY_SCORE <= 1000)) + 
+  nrow(naics_324_sf %>% filter(ACCURACY_SCORE <= 1000)) + 
+  nrow(naics_3255_sf %>% filter(ACCURACY_SCORE <= 1000)) + 
+  nrow(naics_32591_sf %>% filter(ACCURACY_SCORE <= 1000)) + 
+  nrow(naics_3328_sf %>% filter(ACCURACY_SCORE <= 1000)) + 
+  nrow(naics_3344_sf %>% filter(ACCURACY_SCORE <= 1000))
+
+landfills_rows_confident_geocoding <-
+  nrow(landfills_sf %>% filter(ACCURACY_SCORE <= 1000))
+
+type <-
+  c(
+    "Carceral facilities",
+    "Airports",
+    "Wastewater Treatment Plants",
+    "NAICS Industrial Facilities",
+    "Landfills",
+    "Military Bases",
+    "BRAC",
+    "FUDS"
+  )
+
+facility_counts <- 
+  c(
+    nrow(pb_sf),
+    nrow(airports_sf),
+    nrow(wwtp_sf),
+    naics_rows,
+    nrow(landfills_sf),
+    nrow(military_bases_sf),
+    nrow(brac_sf),
+    nrow(fuds_sf)
+  )
+    
+facility_counts_accurate_geocoding <-
+    c(
+    nrow(pb_sf),
+    nrow(airports_sf),
+    nrow(wwtp_sf),
+    naics_rows_confident_geocoding,
+    landfills_rows_confident_geocoding,
+    nrow(military_bases_sf),
+    nrow(brac_sf),
+    nrow(fuds_sf)
+  )
+
+facility_totals <-
+  data.frame(type, facility_counts, facility_counts_accurate_geocoding)
+
+rm(naics_rows, naics_rows_confident_geocoding, landfills_rows_confident_geocoding, type, facility_counts, facility_counts_accurate_geocoding)
+
+ facility_totals
+```
+
+### How many carceral facilities were not open or missing population data?
+
+The Department of Homeland Security extracts information about facility operating statuses, capacities, and current populations from city, county, and state websites and documents. That data is missing from this dataset if it hasn't been recorded via these sources. 
+
+```{r}
+pb_sf %>%
+  st_set_geometry(NULL) %>%
+  summarize(num_not_closed = sum(STATUS != "CLOSED"),
+            percent_not_closed = sum(STATUS != "CLOSED") / n() * 100,
+            num_missing_pop = sum(POPULATION == -999),
+            percent_missing_pop = sum(POPULATION == -999) / n() * 100)
+  
+```
+
+## Get HUC-12s Boundary Codes and Elevations for Each Point Source
+
+> The HUC-12 Watershed Boundary Dataset is not included in the GitHub repo due to size. It can be accessed at [https://water.usgs.gov/GIS/huc.html](https://water.usgs.gov/GIS/huc.html)
+
+```{r}
+wbd <- st_read("source_datasets/WBD_National_GDB/WBD_National_GDB.gdb/")
+check_validity <- st_is_valid(wbd)
+
+#When we ran this analysis, ten points from the watershed boundary file had invalid geometry. We used functions from the sf package to make the geometries valid. 
+
+wbd_valid <- st_make_valid(wbd)
+rm(wbd)
+
+st_write(wbd_valid, "source_datasets/wbd_valid.gpkg")
+```
+
+For each point source, we first determined where point locations intersected with watershed boundaries. We added the corresponding HUC-12 code to the point source data. Then, using the elevatr package (which streamlines access to the USGS Elevation Point Query Service API), we determined the elevations for each facility. 
+
+### Get HUC and Elevation for Carceral Facilities
+
+```{r}
+intersected_pb_wbd <- st_intersects(pb_sf, wbd_valid)
+
+huc_pb_sf <- pb_sf %>%
+  mutate(intersection = as.integer(intersected_pb_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_pb <- get_elev_point(huc_pb_sf, prj = 4269, src = "epqs")
+
+st_write(elevation_pb, "huc_elevation_datasets/pb_HUC_elevation.gpkg")
+rm(pb_sf, intersected_pb_wbd, huc_pb_sf)
+```
+
+### Get HUC and Elevation for Airports
+
+```{r}
+intersected_airports_wbd <- st_intersects(airports_sf, wbd_valid)
+
+huc_airports_sf <- airports_sf %>%
+  mutate(intersection = as.integer(intersected_airports_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_airports <- get_elev_point(huc_airports_sf, prj = 4269, src = "epqs")
+
+st_write(elevation_airports, "huc_elevation_datasets/airports_HUC_elevation.gpkg")
+rm(airports_sf, intersected_airports_wbd, huc_airports_sf)
+```
+
+### Get HUC and Elevation for WWTP
+
+```{r}
+intersected_wwtp_wbd <- st_intersects(wwtp_sf, wbd_valid)
+
+huc_wwtp_sf <- wwtp_sf %>%
+  mutate(intersection = as.integer(intersected_wwtp_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+#Elevation API requests are handled in chunks to avoid timeouts.
+
+huc_wwtp_1 <- huc_wwtp_sf %>% slice(1:5000)
+elevation_wwtp_1 <- get_elev_point(huc_wwtp_1, prj = 4269, src = "epqs")
+st_write(elevation_wwtp_1, "huc_elevation_datasets/wwtp_HUC_elevation_1.gpkg")
+
+huc_wwtp_2 <- huc_wwtp_sf %>% slice(5001:10000)
+elevation_wwtp_2 <- get_elev_point(huc_wwtp_2, prj = 4269, src = "epqs")
+st_write(elevation_wwtp_2, "huc_elevation_datasets/wwtp_HUC_elevation_2.gpkg")
+
+huc_wwtp_3 <- huc_wwtp_sf %>% slice(10001:15000)
+elevation_wwtp_3 <- get_elev_point(huc_wwtp_3, prj = 4269, src = "epqs")
+st_write(elevation_wwtp_3, "huc_elevation_datasets/wwtp_HUC_elevation_3.gpkg")
+
+huc_wwtp_4 <- huc_wwtp_sf %>% slice(15001:n())
+elevation_wwtp_4 <- get_elev_point(huc_wwtp_4, prj = 4269, src = "epqs")
+st_write(elevation_wwtp_4, "huc_elevation_datasets/wwtp_HUC_elevation_4.gpkg")
+
+elevation_wwtp <- rbind(elevation_wwtp_1, elevation_wwtp_2, elevation_wwtp_3, elevation_wwtp_4)
+st_write(elevation_wwtp, "huc_elevation_datasets/wwtp_HUC_elevation.gpkg")
+
+unlink("huc_elevation_datasets/wwtp_HUC_elevation_1.gpkg")
+unlink("huc_elevation_datasets/wwtp_HUC_elevation_2.gpkg")
+unlink("huc_elevation_datasets/wwtp_HUC_elevation_3.gpkg")
+unlink("huc_elevation_datasets/wwtp_HUC_elevation_4.gpkg")
+
+rm(wwtp_sf, intersected_wwtp_wbd, huc_wwtp_sf, huc_wwtp_1, huc_wwtp_2, huc_wwtp_3, huc_wwtp_4, elevation_wwtp_1, elevation_wwtp_2, elevation_wwtp_3, elevation_wwtp_4)
+```
+
+### Get HUC and Elevation for NAICS 313
+
+```{r}
+intersected_naics_313_wbd <- st_intersects(naics_313_sf, wbd_valid)
+
+huc_naics_313 <- naics_313_sf %>%
+  mutate(intersection = as.integer(intersected_naics_313_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_naics_313 <- get_elev_point(huc_naics_313, prj = 4269, src = "epqs")
+st_write(elevation_naics_313, "huc_elevation_datasets/naics_313_HUC_elevation.gpkg")
+
+rm(naics_313_sf, intersected_naics_313_wbd, huc_naics_313)
+```
+
+### Get HUC and Elevation for NAICS 322
+
+```{r}
+intersected_naics_322_wbd <- st_intersects(naics_322_sf, wbd_valid)
+
+huc_naics_322 <- naics_322_sf %>%
+  mutate(intersection = as.integer(intersected_naics_322_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_naics_322 <- get_elev_point(huc_naics_322, prj = 4269, src = "epqs")
+st_write(elevation_naics_322, "huc_elevation_datasets/naics_322_HUC_elevation.gpkg")
+
+rm(naics_322_sf, intersected_naics_322_wbd, huc_naics_322)
+```
+
+### Get HUC and Elevation for NAICS 323
+
+```{r}
+intersected_naics_323_wbd <- st_intersects(naics_323_sf, wbd_valid)
+
+huc_naics_323 <- naics_323_sf %>%
+  mutate(intersection = as.integer(intersected_naics_323_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+#Elevation API requests are handled in chunks to avoid timeouts.
+
+huc_naics_323_1 <- huc_naics_323 %>% slice(1:6000)
+elevation_naics_323_1 <- get_elev_point(huc_naics_323_1, prj = 4269, src = "epqs")
+st_write(elevation_naics_323_1, "huc_elevation_datasets/naics_323_HUC_elevation_1.gpkg")
+
+huc_naics_323_2 <- huc_naics_323 %>% slice(6001:n())
+elevation_naics_323_2 <- get_elev_point(huc_naics_323_2, prj = 4269, src = "epqs")
+st_write(elevation_naics_323_2, "huc_elevation_datasets/naics_323_HUC_elevation_2.gpkg")
+
+elevation_naics_323 <- rbind(elevation_naics_323_1, elevation_naics_323_2)
+st_write(elevation_naics_323, "huc_elevation_datasets/naics_323_HUC_elevation.gpkg")
+
+unlink("huc_elevation_datasets/naics_323_HUC_elevation_1.gpkg")
+unlink("huc_elevation_datasets/naics_323_HUC_elevation_2.gpkg")
+
+rm(naics_323_sf, intersected_naics_323_wbd, huc_naics_323, huc_naics_323_1, huc_naics_323_2, elevation_naics_323_1, elevation_naics_323_2)
+```
+
+### Get HUC and Elevation for NAICS 324
+
+```{r}
+intersected_naics_324_wbd <- st_intersects(naics_324_sf, wbd_valid)
+
+huc_naics_324 <- naics_324_sf %>%
+  mutate(intersection = as.integer(intersected_naics_324_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+#Elevation API requests are handled in chunks to avoid timeouts.
+
+huc_naics_324_1 <- huc_naics_324 %>% slice(1:5000)
+elevation_naics_324_1 <- get_elev_point(huc_naics_324_1, prj = 4269, src = "epqs")
+st_write(elevation_naics_324_1, "huc_elevation_datasets/naics_324_HUC_elevation_1.gpkg")
+
+huc_naics_324_2 <- huc_naics_324 %>% slice(5001:n())
+elevation_naics_324_2 <- get_elev_point(huc_naics_324_2, prj = 4269, src = "epqs")
+st_write(elevation_naics_324_2, "huc_elevation_datasets/naics_324_HUC_elevation_2.gpkg")
+
+elevation_naics_324 <- rbind(elevation_naics_324_1, elevation_naics_324_2)
+st_write(elevation_naics_324, "huc_elevation_datasets/naics_324_HUC_elevation.gpkg")
+
+unlink("huc_elevation_datasets/naics_324_HUC_elevation_1.gpkg")
+unlink("huc_elevation_datasets/naics_324_HUC_elevation_2.gpkg")
+
+rm(naics_324_sf, intersected_naics_324_wbd, huc_naics_324, huc_naics_324_1, huc_naics_324_2, elevation_naics_324_1, elevation_naics_324_2)
+```
+
+### Get HUC and Elevation for NAICS 3255
+
+```{r}
+intersected_naics_3255_wbd <- st_intersects(naics_3255_sf, wbd_valid)
+
+huc_naics_3255 <- naics_3255_sf %>%
+  mutate(intersection = as.integer(intersected_naics_3255_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_naics_3255 <- get_elev_point(huc_naics_3255, prj = 4269, src = "epqs")
+st_write(elevation_naics_3255, "huc_elevation_datasets/naics_3255_HUC_elevation.gpkg")
+
+rm(naics_3255_sf, intersected_naics_3255_wbd, huc_naics_3255)
+```
+
+### Get HUC and Elevation for NAICS 32591
+
+```{r}
+intersected_naics_32591_wbd <- st_intersects(naics_32591_sf, wbd_valid)
+
+huc_naics_32591 <- naics_32591_sf %>%
+  mutate(intersection = as.integer(intersected_naics_32591_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_naics_32591 <- get_elev_point(huc_naics_32591, prj = 4269, src = "epqs")
+st_write(elevation_naics_32591, "huc_elevation_datasets/naics_32591_HUC_elevation.gpkg")
+
+rm(naics_32591_sf, intersected_naics_32591_wbd, huc_naics_32591)
+```
+
+### Get HUC and Elevation for NAICS 3328
+
+```{r}
+intersected_naics_3328_wbd <- st_intersects(naics_3328_sf, wbd_valid)
+
+huc_naics_3328 <- naics_3328_sf %>%
+  mutate(intersection = as.integer(intersected_naics_3328_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+#Elevation API requests are handled in chunks to avoid timeouts.
+
+huc_naics_3328_1 <- huc_naics_3328 %>% slice(1:5000)
+elevation_naics_3328_1 <- get_elev_point(huc_naics_3328_1, prj = 4269, src = "epqs")
+st_write(elevation_naics_3328_1, "huc_elevation_datasets/naics_3328_HUC_elevation_1.gpkg")
+
+huc_naics_3328_2 <- huc_naics_3328 %>% slice(5001:n())
+elevation_naics_3328_2 <- get_elev_point(huc_naics_3328_2, prj = 4269, src = "epqs")
+st_write(elevation_naics_3328_2, "huc_elevation_datasets/naics_3328_HUC_elevation_2.gpkg")
+
+elevation_naics_3328 <- rbind(elevation_naics_3328_1, elevation_naics_3328_2)
+st_write(elevation_naics_3328, "huc_elevation_datasets/naics_3328_HUC_elevation.gpkg")
+
+unlink("huc_elevation_datasets/naics_3328_HUC_elevation_1.gpkg")
+unlink("huc_elevation_datasets/naics_3328_HUC_elevation_2.gpkg")
+
+rm(naics_3328_sf, intersected_naics_3328_wbd, huc_naics_3328, huc_naics_3328_1, huc_naics_3328_2, elevation_naics_3328_1, elevation_naics_3328_2)
+```
+
+### Get HUC and Elevation for NAICS 3344
+
+```{r}
+intersected_naics_3344_wbd <- st_intersects(naics_3344_sf, wbd_valid)
+
+huc_naics_3344 <- naics_3344_sf %>%
+  mutate(intersection = as.integer(intersected_naics_3344_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_naics_3344 <- get_elev_point(huc_naics_3344, prj = 4269, src = "epqs")
+st_write(elevation_naics_3344, "huc_elevation_datasets/naics_3344_HUC_elevation.gpkg")
+
+rm(naics_3344_sf, intersected_naics_3344_wbd, huc_naics_3344)
+```
+
+### Get HUC and Elevation for Landfills
+
+```{r}
+intersected_landfills_wbd <- st_intersects(landfills_sf, wbd_valid)
+
+huc_landfills <- landfills_sf %>%
+  mutate(intersection = as.integer(intersected_landfills_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+#Elevation API requests are handled in chunks to avoid timeouts.
+
+huc_landfills_1 <- huc_landfills %>% slice(1:5000)
+elevation_landfills_1 <- get_elev_point(huc_landfills_1, prj = 4269, src = "epqs")
+st_write(elevation_landfills_1, "huc_elevation_datasets/landfills_HUC_elevation_1.gpkg")
+
+huc_landfills_2 <- huc_landfills %>% slice(5001:10000)
+elevation_landfills_2 <- get_elev_point(huc_landfills_2, prj = 4269, src = "epqs")
+st_write(elevation_landfills_2, "huc_elevation_datasets/landfills_HUC_elevation_2.gpkg")
+
+huc_landfills_3 <- huc_landfills %>% slice(10001:n())
+elevation_landfills_3 <- get_elev_point(huc_landfills_3, prj = 4269, src = "epqs")
+st_write(elevation_landfills_3, "huc_elevation_datasets/landfills_HUC_elevation_3.gpkg")
+
+elevation_landfills <- rbind(elevation_landfills_1, elevation_landfills_2, elevation_landfills_3)
+st_write(elevation_landfills, "huc_elevation_datasets/landfills_HUC_elevation.gpkg")
+
+unlink("huc_elevation_datasets/landfills_HUC_elevation_1.gpkg")
+unlink("huc_elevation_datasets/landfills_HUC_elevation_2.gpkg")
+unlink("huc_elevation_datasets/landfills_HUC_elevation_3.gpkg")
+
+rm(landfills_sf, intersected_landfills_wbd, huc_landfills_1, huc_landfills_2, huc_landfills_3, elevation_landfills_1, elevation_landfills_2, elevation_landfills_3)
+```
+
+### Get HUC and Elevation for Military Bases (MIRTA)
+
+```{r}
+intersected_military_bases_wbd <- st_intersects(military_bases_sf, wbd_valid)
+
+huc_military_bases <- military_bases_sf %>%
+  mutate(intersection = as.integer(intersected_military_bases_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_military_bases <- get_elev_point(huc_military_bases, prj = 4269, src = "epqs")
+
+st_write(elevation_military_bases, "huc_elevation_datasets/military_bases_HUC_elevation.gpkg")
+rm(military_bases_sf, intersected_military_bases_wbd, huc_military_bases)
+```
+
+### Get HUC and Elevation for BRAC
+
+```{r}
+intersected_brac_wbd <- st_intersects(brac_sf, wbd_valid)
+
+huc_brac <- brac_sf %>%
+  mutate(intersection = as.integer(intersected_brac_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_brac <- get_elev_point(huc_brac, prj = 4269, src = "epqs")
+
+st_write(elevation_brac, "huc_elevation_datasets/brac_HUC_elevation.gpkg")
+rm(brac_sf, intersected_brac_wbd, huc_brac)
+```
+
+### Get HUC and Elevation for FUDS
+
+```{r}
+intersected_fuds_wbd <- st_intersects(fuds_sf, wbd_valid)
+
+huc_fuds <- fuds_sf %>%
+  mutate(intersection = as.integer(intersected_fuds_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_fuds <- get_elev_point(huc_fuds, prj = 4269, src = "epqs")
+
+st_write(elevation_fuds, "huc_elevation_datasets/fuds_HUC_elevation.gpkg")
+rm(fuds_sf, intersected_fuds_wbd, huc_fuds)
+```
+
+## Quality Assurance Check 
+
+In the EPA's wastewater treatment plant data, there was a variable for HUC-8. HUC-8 codes should match the first 8 digits of the HUC-12 code, and we noticed that in some cases the HUC-8 code reported by the EPA did not match the HUC-12 code that we derived from determining geo-spatial intersections. We used this code to produce a data file of non-matches and then spot checked a number of rows. In all tested cases, the HUC-12 codes that we derived were accurate. 
+
+```{r}
+non_matches <-
+  wwtp_sf %>% 
+  mutate(HUC2 = str_sub(HUC, 1, 8)) %>%
+  filter(PRIMARY_WATERSHED_HUC != HUC2) %>%
+  rename(ORIGINAL_HUC_8 = PRIMARY_WATERSHED_HUC,
+         CALCULATED_HUC_12 = HUC,
+         CALCULATED_HUC_8 = HUC2) %>%
+  relocate(ORIGINAL_HUC_8, .before = CALCULATED_HUC_12)
+
+write.csv(non_matches, "qa_datasets/wwtp_with_huc_non_matches.csv")
+```
+
+
+

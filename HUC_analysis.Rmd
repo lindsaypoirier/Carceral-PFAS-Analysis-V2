@@ -37,72 +37,41 @@ All of these files were created in get_HUC_elevation.Rmd.
 
 ```{r}
 pb_huc_elevation <- st_read("huc_elevation_datasets/pb_HUC_elevation.gpkg")
-pb_huc_elevation_not_closed <- pb_huc_elevation %>%
+
+pb_huc_elevation_not_closed <- 
+  pb_huc_elevation %>%
   filter(STATUS != "CLOSED")
-airports_huc_elevation <- st_read("huc_elevation_datasets/airports_HUC_elevation.gpkg")
-wwtp_huc_elevation <- st_read("huc_elevation_datasets/wwtp_HUC_elevation.gpkg")
-naics_313_huc_elevation <- st_read("huc_elevation_datasets/naics_313_HUC_elevation.gpkg")
-naics_322_huc_elevation <- st_read("huc_elevation_datasets/naics_322_HUC_elevation.gpkg")
-naics_323_huc_elevation <- st_read("huc_elevation_datasets/naics_323_HUC_elevation.gpkg")
-naics_324_huc_elevation <- st_read("huc_elevation_datasets/naics_324_HUC_elevation.gpkg")
-naics_3255_huc_elevation <- st_read("huc_elevation_datasets/naics_3255_HUC_elevation.gpkg")
-naics_32591_huc_elevation <- st_read("huc_elevation_datasets/naics_32591_HUC_elevation.gpkg")
-naics_3328_huc_elevation <- st_read("huc_elevation_datasets/naics_3328_HUC_elevation.gpkg")
-naics_3344_huc_elevation <- st_read("huc_elevation_datasets/naics_3344_HUC_elevation.gpkg")
-landfills_huc_elevation <- st_read("huc_elevation_datasets/landfills_HUC_elevation.gpkg")
-military_bases_huc_elevation <- st_read("huc_elevation_datasets/military_bases_HUC_elevation.gpkg")
-brac_huc_elevation <- st_read("huc_elevation_datasets/brac_HUC_elevation.gpkg")
-fuds_huc_elevation <- st_read("huc_elevation_datasets/fuds_HUC_elevation.gpkg")
+
+susp_cont_huc_elevation <- st_read("huc_elevation_datasets/susp_cont_HUC_elevation.gpkg")
 ```
 
 ## Join Point Sources to Carceral Facilities with Shared HUC-12
 
-Inputs:
-
-* A data frame representing a potential PFAS point source
-* A boolean for whether we need to account for the geo-coding accuracy of that point source
-* A column name that can serve as a unique ID for each row in the PFAS point source data frame
-* Text that can serve as a label for that point source
-
 Purpose: 
 
-This function will perform an inner join to link carceral facilities with PFAS point sources that share the same HUC-12 watershed boundary. It will filter to carceral facilities at a lower elevation than point sources. The function will also clean up the data frame to prepare it for calculations. If the set_geocoding_accuracy boolean is set to TRUE, for each row in the dataset, it will check the ACCURACY_SCORE column and set a GEOCODING_ACCURACY_FILTER variable to 1 if the ACCURACY_SCORE is less than or equal to 1000 and 0 if not. If the set_geocoding_accuracy boolean is set to FALSE, it sets to the GEOCODING_ACCURACY_FILTER variable to 1 for all rows.  This will allow us to eventually filter out facilities for which we are not confident in the geo-coding accuracy. 
+This function will perform an inner join to link carceral facilities with PFAS point sources that share the same HUC-12 watershed boundary. It will filter to carceral facilities at a lower elevation than point sources. 
 
 Return:
 
-* A data frame that can be used to calculate the total carceral facilities in the same HUC-12 watershed boundary and at a lower elevation than a PFAS point source. Note that at this point there may be duplicate carceral facilities in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the carceral facility
+* A data frame that can be used to calculate the total carceral facilities in the same HUC-12 watershed boundary and at a lower elevation than a PFAS point source. Note that at this point there may be duplicate carceral facilities in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the carceral facility.
 
 ```{r}
-pb_point_source_join <- function(point_source_df, set_geocoding_accuracy, ID_COLUMN, point_source_label) {
-  joined_df <-
-    pb_huc_elevation %>%
-    select(-elev_units) %>%
-    rename(ELEVATION_CARCERAL = elevation) %>%
-    st_set_geometry(NULL) %>%
-    inner_join(point_source_df %>% st_set_geometry(NULL), by = "HUC") %>%
+joined_df <-
+  pb_huc_elevation %>%
+  select(-elev_units) %>%
+  rename(ELEVATION_CARCERAL = elevation) %>%
+  st_set_geometry(NULL) %>%
+  inner_join(susp_cont_huc_elevation %>% 
+                 st_set_geometry(NULL), 
+               by = "HUC") %>%
     filter(ELEVATION_CARCERAL < elevation) %>%
     mutate(POPULATION = na_if(POPULATION, -999)) %>%
-    mutate(POINT_SOURCE = point_source_label) %>% #Add a text label to describe which kind of point source this is
-    rename(ID_COLUMN = ID_COLUMN) # Set the name of ID_COLUMN to the ID_COLUMN name provided via the function inputs
-  
-  if (set_geocoding_accuracy == TRUE) {
-    joined_df <-
-      joined_df %>%
-      mutate(GEOCODING_ACCURACY_FILTER = ifelse((ACCURACY_SCORE <= 1000), 1, 0)) %>%
-      select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, GEOCODING_ACCURACY_FILTER, POINT_SOURCE, ID_COLUMN)
-  }  
-  else {
-    joined_df <-
-      joined_df %>%
-      mutate(GEOCODING_ACCURACY_FILTER = 1) %>%
-      select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, GEOCODING_ACCURACY_FILTER, POINT_SOURCE, ID_COLUMN)
-  }
-  
-  rm(point_source_df)
-  return(joined_df)
-}
-```
+    rename(SUSP_CONT_ID_COLUMN = Index,
+           SUSP_CONT_SOURCE = Source,
+           SUSP_CONT_DETAILS = Details) %>% # Set the name of ID_COLUMN to the ID_COLUMN name provided via the function inputs
+    select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, SUSP_CONT_SOURCE, SUSP_CONT_DETAILS, SUSP_CONT_ID_COLUMN, SUSP_CONT_ID_COLUMN)
 
+```
 
 ## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Point Source
 
@@ -113,184 +82,41 @@ Inputs:
 
 Purpose: 
 
-This function creates a single row data frame listing the type of point source along with a number of calculations regarding the number, percentage, and populations of carceral facilities in the same HUC-12 and at a lower elevation than that point source. The previous function produced a data frame in which a carceral facility may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This function reduces the file to unique carceral facilities by grouping variables specific to the facility and then setting the geo-coding accuracy filter to 1 if proximate point sources were marked as having accurate geo-coding and to 0 otherwise. It then counts the number of observations in the data frame, the percentage of the total carceral facilities in this US this number represents, and the inmates potentially impacted. It performs the same operations filtering to not closed carceral facilities, and then to cases in which the GEOCODING_ACCURACY_FILTER is set to 1.
+This function creates a single row data frame listing the type of point source along with a number of calculations regarding the number, percentage, and populations of carceral facilities in the same HUC-12 and at a lower elevation than that point source. The previous function produced a data frame in which a carceral facility may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This function reduces the file to unique carceral facilities by grouping variables specific to the facility. It then counts the number of observations in the data frame, the percentage of the total carceral facilities in the US this number represents, and the number of inmates potentially impacted. It performs the same operations filtering to not closed carceral facilities.
 
 ```{r}
-point_source_calculations <- function(pb_point_source_join_df, point_source_label) {
-  pb_point_source_join_df %>%
-  group_by(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
-  summarize(GEOCODING_ACCURACY_FILTER = case_when(any(GEOCODING_ACCURACY_FILTER == 1) ~ 1, 
-                                                  TRUE ~ 0)) %>%
-  ungroup() %>%
-  summarize(POINT_SOURCE = point_source_label,
-            TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+by_source <- 
+  joined_df %>%
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
+  distinct() %>%
+  summarize(TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
             PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100,
             AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED"),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED") / nrow(pb_huc_elevation_not_closed) * 100, 
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE),
-            NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED" & GEOCODING_ACCURACY_FILTER == 1),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED" & GEOCODING_ACCURACY_FILTER == 1) / nrow(pb_huc_elevation_not_closed) * 100,
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED" & GEOCODING_ACCURACY_FILTER == 1], na.rm = TRUE)
+            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE),
+            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE) / nrow(pb_huc_elevation_not_closed) * 100, 
+            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE)
             )
-}
-```
 
-## Function Calls for Each PFAS Point Source
-
-### Airport Calculations
-
-```{r}
-pb_airport_join <- pb_point_source_join(airports_huc_elevation, FALSE, "objectid", "Part 139 Airports")
-airport_calc <- point_source_calculations(pb_airport_join, "Part 139 Airports")
-rm(airports_huc_elevation)
-```
-
-### WWTP Calculations
-
-```{r}
-pb_wwtp_join <- pb_point_source_join(wwtp_huc_elevation, FALSE, "CWNS_NUMBER", "Wastewater Treatment Plants")
-wwtp_calc <- point_source_calculations(pb_wwtp_join, "Wastewater Treatment Plants")
-rm(wwtp_huc_elevation)
-```
-
-### NAICS 313 Calculations
-
-```{r}
-pb_naics_313_join <- pb_point_source_join(naics_313_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 313: Textile Mills")
-naics_313_calc <- point_source_calculations(pb_naics_313_join, "NAICS 313: Textile Mills")
-rm(naics_313_huc_elevation)
-```
-
-### NAICS 322 Calculations
-
-```{r}
-pb_naics_322_join <- pb_point_source_join(naics_322_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 322: Paper manufacturing")
-naics_322_calc <- point_source_calculations(pb_naics_322_join, "NAICS 322: Paper manufacturing")
-rm(naics_322_huc_elevation)
-```
-
-### NAICS 323 Calculations
-
-```{r}
-pb_naics_323_join <- pb_point_source_join(naics_323_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 323: Printing and related support activities")
-naics_323_calc <- point_source_calculations(pb_naics_323_join, "NAICS 323: Printing and related support activities")
-rm(naics_323_huc_elevation)
-```
-
-### NAICS 324 Calculations
-
-```{r}
-pb_naics_324_join <- pb_point_source_join(naics_324_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 324: Petroleum and coal products manufacturing")
-naics_324_calc <- point_source_calculations(pb_naics_324_join, "NAICS 324: Petroleum and coal products manufacturing")
-rm(naics_324_huc_elevation)
-```
-
-### NAICS 3255 Calculations
-
-```{r}
-pb_naics_3255_join <- pb_point_source_join(naics_3255_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 3255: Chemical manufacturing")
-naics_3255_calc <- point_source_calculations(pb_naics_3255_join, "NAICS 3255: Chemical manufacturing")
-rm(naics_3255_huc_elevation)
-```
-
-### NAICS 32591 Calculations
-
-```{r}
-pb_naics_32591_join <- pb_point_source_join(naics_32591_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 32591: Printing ink manufacturing")
-naics_32591_calc <- point_source_calculations(pb_naics_32591_join, "NAICS 32591: Printing ink manufacturing")
-rm(naics_32591_huc_elevation)
-```
-
-### NAICS 3328 Calculations
-
-```{r}
-pb_naics_3328_join <- pb_point_source_join(naics_3328_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 3328: Metal coating, engraving, heat treating, and allied activities")
-naics_3328_calc <- point_source_calculations(pb_naics_3328_join, "NAICS 3328: Metal coating, engraving, heat treating, and allied activities")
-rm(naics_3328_huc_elevation)
-```
-
-### NAICS 3344 Calculations
-
-```{r}
-pb_naics_3344_join <- pb_point_source_join(naics_3344_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 3344: Semiconductor and other electronic component manufacturing")
-naics_3344_calc <- point_source_calculations(pb_naics_3344_join, "NAICS 3344: Semiconductor and other electronic component manufacturing")
-rm(naics_3344_huc_elevation)
-```
-
-### Landfills Calculations
-
-```{r}
-pb_landfills_join <- pb_point_source_join(landfills_huc_elevation, TRUE, "REGISTRY_ID", "NAICS 562212: Landfills")
-landfills_calc <- point_source_calculations(pb_landfills_join, "NAICS 562212: Landfills")
-rm(landfills_huc_elevation)
-```
-
-### Military Bases Calculations
-
-```{r}
-pb_military_bases_join <- pb_point_source_join(military_bases_huc_elevation, FALSE, "OBJECTID", "Military Bases")
-military_bases_calc <- point_source_calculations(pb_military_bases_join, "Military Bases")
-rm(military_bases_huc_elevation)
-```
-
-### BRAC Calculations
-
-```{r}
-pb_brac_join <- pb_point_source_join(brac_huc_elevation, FALSE, "ID", "Base Realignment and Closure Sites")
-brac_calc <- point_source_calculations(pb_brac_join, "Base Realignment and Closure Sites")
-rm(brac_huc_elevation)
-```
-
-### FUDS Calculations
-
-```{r}
-fuds_huc_elevation <-
-  fuds_huc_elevation %>%
-  rename(STATUS_FUDS = STATUS) # Status variable name is shared across fuds_huc_elevation and pb_huc_elevation
-
-pb_fuds_join <- pb_point_source_join(fuds_huc_elevation, FALSE, "OBJECTID", "Formerly Used Defense Sites")
-fuds_calc <- point_source_calculations(pb_fuds_join, "Formerly Used Defense Sites")
-rm(fuds_huc_elevation)
 ```
 
 ## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Any Point Source
 
-This code chunk binds all data frames created by the pb_point_source_join function. This creates a data frame in which each row represents a carceral facility/proximate PFAS point source pair. By calling the point_source_calculations function on this new data frame, rows are subset to unique carceral facilities proximate to any point source and calculations determine the numbers, percentages, and populations of carceral facilities in proximity.
-
 ```{r}
-pbs_in_point_source_watershed_bind <-
-  rbind(pb_airport_join, 
-      pb_wwtp_join, 
-      pb_naics_313_join,
-      pb_naics_322_join,
-      pb_naics_323_join,
-      pb_naics_324_join,
-      pb_naics_3255_join,
-      pb_naics_32591_join,
-      pb_naics_3328_join,
-      pb_naics_3344_join,
-      pb_landfills_join,
-      pb_military_bases_join,
-      pb_brac_join,
-      pb_fuds_join)
-  
-rm(pb_airport_join, 
-      pb_wwtp_join, 
-      pb_naics_313_join,
-      pb_naics_322_join,
-      pb_naics_323_join,
-      pb_naics_324_join,
-      pb_naics_3255_join,
-      pb_naics_32591_join,
-      pb_naics_3328_join,
-      pb_naics_3344_join,
-      pb_landfills_join,
-      pb_military_bases_join,
-      pb_brac_join,
-      pb_fuds_join)
+at_least_one_source <-
+  joined_df %>%
+  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
+  distinct() %>%
+  summarize(TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+            PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100,
+            AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
+            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE),
+            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE) / nrow(pb_huc_elevation_not_closed) * 100, 
+            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE)
+            ) %>%
+  mutate(SUSP_CONT_SOURCE = "At least one") %>%
+  relocate(SUSP_CONT_SOURCE, .before = TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC)
 
-total_calc <- point_source_calculations(pbs_in_point_source_watershed_bind, "At least one of any above point sources")
 ```
 
 ## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Multiple Point Sources
@@ -298,90 +124,49 @@ total_calc <- point_source_calculations(pbs_in_point_source_watershed_bind, "At 
 Inputs:
 
 * The data frame created by the previous function
-* Text that can serve as a label for that point source
 * A number serving as a threshold for how many point sources to check whether proximate
 
 Purpose: 
 
-This replicates the point_source_calculations function but also takes as an input a threshold for the number of point sources to check whether carceral facilities are in proximity to. It:
+This replicates the above point source calculations but also takes as an input a threshold for the number of point sources to check whether carceral facilities are in proximity to. It:
 
 * groups rows representing the same carceral facility, 
 * filters to groups in which the number of observations (in this case representing proximate point sources) is greater than the threshold, 
-* resets the geocoding accuracy filter to 1 only if the number of proximate point sources marked as having geo-coding accuracy is greater than the threshold and 0 otherwise,
 * selects variables related to carceral facilities and subsets to distinct carceral facilities
 
-After this, the same calculations are performed as those performed in point_source_calculations.
+After this, the same calculations are performed as those performed above.
 
 ```{r}
-more_than_one_point_source_calculations <- function(pb_point_source_join_df, point_source_label, threshold) {
-  pb_point_source_join_df %>%
+more_than_one_point_source_calculation <- function(threshold) {
+  joined_df %>%
   group_by(FACILITYID) %>%
   filter(n() > threshold) %>%
-  mutate(GEOCODING_ACCURACY_FILTER = ifelse(sum(GEOCODING_ACCURACY_FILTER) > threshold, 1, 0)) %>%
   ungroup() %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, GEOCODING_ACCURACY_FILTER) %>%
+  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
   distinct() %>%
-  summarize(POINT_SOURCE = point_source_label,
-            TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+  summarize(TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
             PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100,
             AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED"),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED") / nrow(pb_huc_elevation_not_closed) * 100, 
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE),
-            NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED" & GEOCODING_ACCURACY_FILTER == 1),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED" & GEOCODING_ACCURACY_FILTER == 1) / nrow(pb_huc_elevation_not_closed) * 100,
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED" & GEOCODING_ACCURACY_FILTER == 1], na.rm = TRUE)
-            )
+            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE),
+            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE) / nrow(pb_huc_elevation_not_closed) * 100, 
+            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE)
+            ) %>%
+  mutate(SUSP_CONT_SOURCE = paste("More than", threshold )) %>%
+  relocate(SUSP_CONT_SOURCE, .before = TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC)
 }
+
+more_than_one_source <- more_than_one_point_source_calculation(1)
+more_than_five_source <- more_than_one_point_source_calculation(5)
 ```
 
-## Function Calls for More than One Point Source
-
 ```{r}
-total_more_than_one_calc <- more_than_one_point_source_calculations(pbs_in_point_source_watershed_bind, "More than one of any above point sources", 1)
-total_more_than_five_calc <- more_than_one_point_source_calculations(pbs_in_point_source_watershed_bind, "More than five of any above point sources", 5)
-```
-
-## Bind Calculations for Table 1
-
-```{r}
-table1 <-
-  rbind(airport_calc, 
-      wwtp_calc, 
-      naics_313_calc,
-      naics_322_calc,
-      naics_323_calc,
-      naics_324_calc,
-      naics_3255_calc,
-      naics_32591_calc,
-      naics_3328_calc,
-      naics_3344_calc,
-      landfills_calc,
-      military_bases_calc,
-      brac_calc,
-      fuds_calc,
-      total_calc,
-      total_more_than_one_calc,
-      total_more_than_five_calc)
-
-rm(airport_calc, 
-      wwtp_calc, 
-      naics_313_calc,
-      naics_322_calc,
-      naics_323_calc,
-      naics_324_calc,
-      naics_3255_calc,
-      naics_32591_calc,
-      naics_3328_calc,
-      naics_3344_calc,
-      landfills_calc,
-      military_bases_calc,
-      brac_calc,
-      fuds_calc,
-      total_calc,
-      total_more_than_one_calc,
-      total_more_than_five_calc
-   )
+table1 <- 
+  rbind(
+    by_source, 
+    at_least_one_source,
+    more_than_one_source,
+    more_than_five_source
+    )
 
 write.csv(table1, "final_datasets/table1.csv")
 table1
@@ -389,41 +174,40 @@ table1
 
 ## Perform Point Source Calculations by Type to Create Table 2
 
-This takes the data frame created above in which each row represents a carceral facility/proximate PFAS point source pair. First it determines the distinct not closed carceral facilities that are proximate to at least one point source with geo-coding accuracy. The number of rows in this data frame is used as the denominator when calculating percentages in the first columns of this table. It also determines the distinct not closed *juvenile* carceral facilities that are proximate to at least one point source with geo-coding accuracy. The number of rows in this data frame is used as the denominator when calculating percentages in the final columns of this table. It then calculates the number, percentage, and populations of not closed carceral facilities proximate to at least one point source with accurate geo-coding, as well as the number, percentage, and populations of not closed *juvenile* carceral facilities proximate to at least one point source with accurate geo-coding. 
+This takes the data frame created above in which each row represents a carceral facility/proximate PFAS point source pair. First it determines the distinct not closed carceral facilities that are proximate to at least one point source. The number of rows in this data frame is used as the denominator when calculating percentages in the first columns of this table. It also determines the distinct not closed *juvenile* carceral facilities that are proximate to at least one point source. The number of rows in this data frame is used as the denominator when calculating percentages in the final columns of this table. It then calculates the number, percentage, and populations of not closed carceral facilities proximate to at least one point source, as well as the number, percentage, and populations of not closed *juvenile* carceral facilities proximate to at least one point source. 
 
 ```{r}
-
 pbs_in_point_source_watershed_join_not_closed <- 
-  pbs_in_point_source_watershed_bind %>%
-  filter(STATUS != "CLOSED" & GEOCODING_ACCURACY_FILTER == 1) %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, GEOCODING_ACCURACY_FILTER) %>%
+  joined_df %>%
+  filter(STATUS != "CLOSED") %>%
+  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
   distinct()
 
 pbs_in_point_source_watershed_join_not_closed_juv <- 
-  pbs_in_point_source_watershed_join_not_closed %>%
+  joined_df %>%
   filter(SECURELVL == "JUVENILE") %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, GEOCODING_ACCURACY_FILTER) %>%
+  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
   distinct()
 
 by_type <-
   pbs_in_point_source_watershed_join_not_closed %>%
   group_by(TYPE) %>%
-  summarize(NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = n(),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = n() / nrow(pbs_in_point_source_watershed_join_not_closed) * 100,
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            JUV_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
-            PERC_JUV_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pbs_in_point_source_watershed_join_not_closed_juv) * 100,
-            AT_LEAST_JUV_NOT_CLOSED_CARC_POP_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE))
+  summarize(NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pbs_in_point_source_watershed_join_not_closed) * 100,
+            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
+            JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
+            PERC_JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pbs_in_point_source_watershed_join_not_closed_juv) * 100,
+            AT_LEAST_JUV_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE))
 
 by_type_totals <-
   pbs_in_point_source_watershed_join_not_closed %>%
   summarize(TYPE = "Total",
-            NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = n(),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = n() / nrow(pbs_in_point_source_watershed_join_not_closed) * 100,
-                        AT_LEAST_NOT_CLOSED_CARC_POP_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            JUV_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
-            PERC_JUV_NOT_CLOSED_CARC_FAC_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pbs_in_point_source_watershed_join_not_closed_juv) * 100,
-            AT_LEAST_JUV_NOT_CLOSED_CARC_POP_WITH_GEO_ACCURATE_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE))
+            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pbs_in_point_source_watershed_join_not_closed) * 100,
+                        AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
+            JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
+            PERC_JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pbs_in_point_source_watershed_join_not_closed_juv) * 100,
+            AT_LEAST_JUV_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE))
 
 table2 <- 
   rbind(by_type, by_type_totals)

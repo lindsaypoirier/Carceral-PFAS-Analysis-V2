@@ -11,7 +11,7 @@ The purpose of the code presented in this document is to determine how many carc
 2. Joins carceral facility data to data representing the locations of each potential point source based on a shared HUC-12 code
 3. Filters to carceral facilities at a lower elevation than a potential point source as a proxy for hydrological flow direction
 4. Calculates the number of unique facilities in the same HUC-12 watershed boundary and at a lower elevation than each point source and a combination of point sources, along with the number of incarcerated people potentially impacted
-5. Presents increasingly conservative calculations by filtering the values down depending on whether facilities have been designated as not closed and whether they have been marked as having accurate geo-coding
+5. Presents increasingly conservative calculations by filtering the values down depending on whether facilities have been designated as not closed
 
 ## Load Packages
 
@@ -47,13 +47,9 @@ susp_cont_huc_elevation <- st_read("huc_elevation_datasets/susp_cont_HUC_elevati
 
 ## Join Point Sources to Carceral Facilities with Shared HUC-12
 
-Purpose: 
+This code will perform an inner join to link carceral facilities with PFAS point sources that share the same HUC-12 watershed boundary. It will filter to carceral facilities at a lower elevation than point sources.
 
-This function will perform an inner join to link carceral facilities with PFAS point sources that share the same HUC-12 watershed boundary. It will filter to carceral facilities at a lower elevation than point sources. 
-
-Return:
-
-* A data frame that can be used to calculate the total carceral facilities in the same HUC-12 watershed boundary and at a lower elevation than a PFAS point source. Note that at this point there may be duplicate carceral facilities in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the carceral facility.
+It will result in a data frame that can be used to calculate the total carceral facilities in the same HUC-12 watershed boundary and at a lower elevation than a PFAS point source. Note that at this point there may be duplicate carceral facilities in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the carceral facility.
 
 ```{r}
 joined_df <-
@@ -68,21 +64,14 @@ joined_df <-
     mutate(POPULATION = na_if(POPULATION, -999)) %>%
     rename(SUSP_CONT_ID_COLUMN = Index,
            SUSP_CONT_SOURCE = Source,
-           SUSP_CONT_DETAILS = Details) %>% # Set the name of ID_COLUMN to the ID_COLUMN name provided via the function inputs
+           SUSP_CONT_DETAILS = Details) %>% 
     select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, SUSP_CONT_SOURCE, SUSP_CONT_DETAILS, SUSP_CONT_ID_COLUMN, SUSP_CONT_ID_COLUMN)
 
 ```
 
 ## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Point Source
 
-Inputs:
-
-* The data frame created by the previous function
-* Text that can serve as a label for that point source
-
-Purpose: 
-
-This function creates a single row data frame listing the type of point source along with a number of calculations regarding the number, percentage, and populations of carceral facilities in the same HUC-12 and at a lower elevation than that point source. The previous function produced a data frame in which a carceral facility may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This function reduces the file to unique carceral facilities by grouping variables specific to the facility. It then counts the number of observations in the data frame, the percentage of the total carceral facilities in the US this number represents, and the number of inmates potentially impacted. It performs the same operations filtering to not closed carceral facilities.
+This code calculates the number, percentage, and populations of carceral facilities in the same HUC-12 and at a lower elevation than each point source. The previous code produced a data frame in which a carceral facility may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This code reduces the file to unique carceral facilities by grouping variables specific to the facility. It then counts the number of observations in the data frame, the percentage of the total carceral facilities in the US this number represents, and the number of inmates potentially impacted. It performs the same operations filtering to not closed carceral facilities.
 
 ```{r}
 by_source <- 
@@ -101,6 +90,8 @@ by_source <-
 ```
 
 ## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Any Point Source
+
+This duplicates the code above without grouping by the suspected contamination source. 
 
 ```{r}
 at_least_one_source <-
@@ -123,7 +114,6 @@ at_least_one_source <-
 
 Inputs:
 
-* The data frame created by the previous function
 * A number serving as a threshold for how many point sources to check whether proximate
 
 Purpose: 

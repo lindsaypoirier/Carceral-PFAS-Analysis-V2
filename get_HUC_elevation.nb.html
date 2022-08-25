@@ -1766,7 +1766,7 @@ pre code {
 <h1 class="title toc-ignore">Get HUC-12 Codes and Elevations for All
 Point Sources</h1>
 <h4 class="author">Lindsay Poirier</h4>
-<h4 class="date">18 July, 2022</h4>
+<h4 class="date">21 July, 2022</h4>
 
 </div>
 
@@ -1795,55 +1795,11 @@ eventually.</p>
 <h2>Load Packages</h2>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGlicmFyeSh0aWR5dmVyc2UpXG5gYGAifQ== -->
-<pre class="r"><code>library(tidyverse)</code></pre>
-<!-- rnb-source-end -->
-<!-- rnb-output-begin eyJkYXRhIjoiUmVnaXN0ZXJlZCBTMyBtZXRob2RzIG92ZXJ3cml0dGVuIGJ5ICdkYnBseXInOlxuICBtZXRob2QgICAgICAgICBmcm9tXG4gIHByaW50LnRibF9sYXp5ICAgICBcbiAgcHJpbnQudGJsX3NxbCAgICAgIFxuIn0= -->
-<pre><code>Registered S3 methods overwritten by &#39;dbplyr&#39;:
-  method         from
-  print.tbl_lazy     
-  print.tbl_sql      </code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-output-begin eyJkYXRhIjoi4pSA4pSAIEF0dGFjaGluZyBwYWNrYWdlcyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAgdGlkeXZlcnNlIDEuMy4yIOKUgOKUgFxu4pyUIGdncGxvdDIgMy4zLjYgICAgIOKclCBwdXJyciAgIDAuMy40XG7inJQgdGliYmxlICAzLjEuNyAgICAg4pyUIGRwbHlyICAgMS4wLjlcbuKclCB0aWR5ciAgIDEuMi4wICAgICDinJQgc3RyaW5nciAxLjQuMFxu4pyUIHJlYWRyICAgMi4xLjIgICAgIOKclCBmb3JjYXRzIDAuNS4xXG4ifQ== -->
-<pre><code>── Attaching packages ───────────────── tidyverse 1.3.2 ──
-✔ ggplot2 3.3.6     ✔ purrr   0.3.4
-✔ tibble  3.1.7     ✔ dplyr   1.0.9
-✔ tidyr   1.2.0     ✔ stringr 1.4.0
-✔ readr   2.1.2     ✔ forcats 0.5.1</code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-output-begin eyJkYXRhIjoiV2FybmluZzogcGFja2FnZSDigJhnZ3Bsb3Qy4oCZIHdhcyBidWlsdCB1bmRlciBSIHZlcnNpb24gNC4xLjJcbldhcm5pbmc6IHBhY2thZ2Ug4oCYdGliYmxl4oCZIHdhcyBidWlsdCB1bmRlciBSIHZlcnNpb24gNC4xLjJcbldhcm5pbmc6IHBhY2thZ2Ug4oCYdGlkeXLigJkgd2FzIGJ1aWx0IHVuZGVyIFIgdmVyc2lvbiA0LjEuMlxuV2FybmluZzogcGFja2FnZSDigJhyZWFkcuKAmSB3YXMgYnVpbHQgdW5kZXIgUiB2ZXJzaW9uIDQuMS4yXG5XYXJuaW5nOiBwYWNrYWdlIOKAmGRwbHly4oCZIHdhcyBidWlsdCB1bmRlciBSIHZlcnNpb24gNC4xLjJcbiJ9 -->
-<pre><code>Warning: package ‘ggplot2’ was built under R version 4.1.2
-Warning: package ‘tibble’ was built under R version 4.1.2
-Warning: package ‘tidyr’ was built under R version 4.1.2
-Warning: package ‘readr’ was built under R version 4.1.2
-Warning: package ‘dplyr’ was built under R version 4.1.2</code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-output-begin eyJkYXRhIjoi4pSA4pSAIENvbmZsaWN0cyDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAgdGlkeXZlcnNlX2NvbmZsaWN0cygpIOKUgOKUgFxu4pyWIGRwbHlyOjpmaWx0ZXIoKSBtYXNrcyBzdGF0czo6ZmlsdGVyKClcbuKcliBkcGx5cjo6bGFnKCkgICAgbWFza3Mgc3RhdHM6OmxhZygpXG4ifQ== -->
-<pre><code>── Conflicts ──────────────────── tidyverse_conflicts() ──
-✖ dplyr::filter() masks stats::filter()
-✖ dplyr::lag()    masks stats::lag()</code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGlicmFyeShzZilcbmBgYCJ9 -->
-<pre class="r"><code>library(sf)</code></pre>
-<!-- rnb-source-end -->
-<!-- rnb-output-begin eyJkYXRhIjoiTGlua2luZyB0byBHRU9TIDMuOS4xLCBHREFMIDMuMy4xLCBQUk9KIDguMS4wOyBzZl91c2VfczIoKSBpcyBUUlVFXG4ifQ== -->
-<pre><code>Linking to GEOS 3.9.1, GDAL 3.3.1, PROJ 8.1.0; sf_use_s2() is TRUE</code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGlicmFyeShyZ2VvcylcbmBgYCJ9 -->
-<pre class="r"><code>library(rgeos)</code></pre>
-<!-- rnb-source-end -->
-<!-- rnb-output-begin eyJkYXRhIjoiTG9hZGluZyByZXF1aXJlZCBwYWNrYWdlOiBzcFxuV2FybmluZzogcGFja2FnZSDigJhzcOKAmSB3YXMgYnVpbHQgdW5kZXIgUiB2ZXJzaW9uIDQuMS4yXG5yZ2VvcyB2ZXJzaW9uOiAwLjUtOSwgKFNWTiByZXZpc2lvbiA2ODQpXG4gR0VPUyBydW50aW1lIHZlcnNpb246IDMuOC4xLUNBUEktMS4xMy4zIFxuIFBsZWFzZSBub3RlIHRoYXQgcmdlb3Mgd2lsbCBiZSByZXRpcmVkIGJ5IHRoZSBlbmQgb2YgMjAyMyxcbnBsYW4gdHJhbnNpdGlvbiB0byBzZiBmdW5jdGlvbnMgdXNpbmcgR0VPUyBhdCB5b3VyIGVhcmxpZXN0IGNvbnZlbmllbmNlLlxuIExpbmtpbmcgdG8gc3AgdmVyc2lvbjogMS40LTYgXG4gUG9seWdvbiBjaGVja2luZzogVFJVRSBcbiJ9 -->
-<pre><code>Loading required package: sp
-Warning: package ‘sp’ was built under R version 4.1.2
-rgeos version: 0.5-9, (SVN revision 684)
- GEOS runtime version: 3.8.1-CAPI-1.13.3 
- Please note that rgeos will be retired by the end of 2023,
-plan transition to sf functions using GEOS at your earliest convenience.
- Linking to sp version: 1.4-6 
- Polygon checking: TRUE </code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGlicmFyeShyZWFkeGwpXG5gYGAifQ== -->
-<pre class="r"><code>library(readxl)</code></pre>
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxubGlicmFyeSh0aWR5dmVyc2UpXG5saWJyYXJ5KHNmKVxubGlicmFyeShyZ2VvcylcbmxpYnJhcnkocmVhZHhsKVxuYGBgIn0= -->
+<pre class="r"><code>library(tidyverse)
+library(sf)
+library(rgeos)
+library(readxl)</code></pre>
 <!-- rnb-source-end -->
 <!-- rnb-output-begin eyJkYXRhIjoiV2FybmluZzogcGFja2FnZSDigJhyZWFkeGzigJkgd2FzIGJ1aWx0IHVuZGVyIFIgdmVyc2lvbiA0LjEuMlxuIn0= -->
 <pre><code>Warning: package ‘readxl’ was built under R version 4.1.2</code></pre>
@@ -1911,6 +1867,19 @@ dbl (4): ...1, X, Longitude, Latitude
 ℹ Use `spec()` to retrieve the full column specification for this data.
 ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.</code></pre>
 <!-- rnb-output-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+</div>
+<div id="pfas" class="section level3">
+<h3>PFAS</h3>
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxucGZhc19zZiA8LSByZWFkLmNzdihcInNvdXJjZV9kYXRhc2V0cy9wZmFzLmNzdlwiKSAgJT4lXG4gIGZpbHRlcighaXMubmEobGF0aXR1ZGUpIHwgIWlzLm5hKGxvbmdpdHVkZSkpICU+JVxuICBzdF9hc19zZihjb29yZHMgPSBjKFwibG9uZ2l0dWRlXCIsIFwibGF0aXR1ZGVcIiksIGNycyA9IDQzMjYsIG5hLmZhaWwgPSBGQUxTRSkgJT4lXG4gIHN0X3RyYW5zZm9ybSg0MjY5KVxuYGBgIn0= -->
+<pre class="r"><code>pfas_sf &lt;- read.csv(&quot;source_datasets/pfas.csv&quot;)  %&gt;%
+  filter(!is.na(latitude) | !is.na(longitude)) %&gt;%
+  st_as_sf(coords = c(&quot;longitude&quot;, &quot;latitude&quot;), crs = 4326, na.fail = FALSE) %&gt;%
+  st_transform(4269)</code></pre>
+<!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
 </div>
@@ -3851,11 +3820,171 @@ Writing 57412 features with 9 fields and geometry type Point.</code></pre>
 <!-- rnb-output-end -->
 <!-- rnb-chunk-end -->
 <!-- rnb-text-begin -->
+</div>
+<div id="get-huc-and-elevation-for-pfas-sites" class="section level3">
+<h3>Get HUC and Elevation for PFAS Sites</h3>
 <!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuaW50ZXJzZWN0ZWRfcGZhc193YmQgPC0gc3RfaW50ZXJzZWN0cyhwZmFzX3NmLCB3YmRfdmFsaWQpXG5cbmh1Y19wZmFzX3NmIDwtIHBmYXNfc2YgJT4lXG4gIG11dGF0ZShpbnRlcnNlY3Rpb24gPSBhcy5pbnRlZ2VyKGludGVyc2VjdGVkX3BmYXNfd2JkKSxcbiAgICAgICAgIEhVQyA9IGlmX2Vsc2UoaXMubmEoaW50ZXJzZWN0aW9uKSwgXCJcIixcbiAgICAgICAgICAgICAgICAgICAgICAgIHdiZF92YWxpZCRodWMxMltpbnRlcnNlY3Rpb25dKSlcblxuZWxldmF0aW9uX3BmYXMgPC0gZ2V0X2VsZXZfcG9pbnQoaHVjX3BmYXNfc2YsIHByaiA9IDQyNjksIHNyYyA9IFwiZXBxc1wiKVxuYGBgIn0= -->
+<pre class="r"><code>intersected_pfas_wbd &lt;- st_intersects(pfas_sf, wbd_valid)
+
+huc_pfas_sf &lt;- pfas_sf %&gt;%
+  mutate(intersection = as.integer(intersected_pfas_wbd),
+         HUC = if_else(is.na(intersection), &quot;&quot;,
+                        wbd_valid$huc12[intersection]))
+
+elevation_pfas &lt;- get_elev_point(huc_pfas_sf, prj = 4269, src = &quot;epqs&quot;)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-output-begin eyJkYXRhIjoiRG93bmxvYWRpbmcgcG9pbnQgZWxldmF0aW9uczpcblxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFstLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgIDAlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWy0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAgMSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLV0gICAyJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgIDIlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz4tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAgMyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPi0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLV0gICA0JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgIDUlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz4tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAgNiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT4tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLV0gICA2JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9Pi0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgIDclXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz0+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAgOCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT4tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLV0gICA5JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9Pi0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgMTAlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09Pi0tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAxMCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT0+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLV0gIDExJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT4tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgMTIlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09Pi0tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAxMyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT0+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLV0gIDE0JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT0+LS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgMTQlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT4tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAxNSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09Pi0tLS0tLS0tLS0tLS0tLS0tLS0tLV0gIDE2JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT0+LS0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgMTclXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT4tLS0tLS0tLS0tLS0tLS0tLS0tLS1dICAxOCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT4tLS0tLS0tLS0tLS0tLS0tLS0tLV0gIDE4JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09Pi0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgMTklXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT0+LS0tLS0tLS0tLS0tLS0tLS0tLS1dICAyMCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT4tLS0tLS0tLS0tLS0tLS0tLS0tLV0gIDIxJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09Pi0tLS0tLS0tLS0tLS0tLS0tLS0tXSAgMjIlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09Pi0tLS0tLS0tLS0tLS0tLS0tLS1dICAyMiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT0+LS0tLS0tLS0tLS0tLS0tLS0tLV0gIDIzJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT4tLS0tLS0tLS0tLS0tLS0tLS0tXSAgMjQlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09Pi0tLS0tLS0tLS0tLS0tLS0tLS1dICAyNSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT0+LS0tLS0tLS0tLS0tLS0tLS0tLV0gIDI2JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT0+LS0tLS0tLS0tLS0tLS0tLS0tXSAgMjYlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT4tLS0tLS0tLS0tLS0tLS0tLS1dICAyNyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09Pi0tLS0tLS0tLS0tLS0tLS0tLV0gIDI4JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT0+LS0tLS0tLS0tLS0tLS0tLS0tXSAgMjklXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT4tLS0tLS0tLS0tLS0tLS0tLS1dICAzMCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT4tLS0tLS0tLS0tLS0tLS0tLV0gIDMwJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09Pi0tLS0tLS0tLS0tLS0tLS0tXSAgMzElXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT0+LS0tLS0tLS0tLS0tLS0tLS1dICAzMiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT4tLS0tLS0tLS0tLS0tLS0tLV0gIDMzJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09Pi0tLS0tLS0tLS0tLS0tLS0tXSAgMzQlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09Pi0tLS0tLS0tLS0tLS0tLS1dICAzNCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT0+LS0tLS0tLS0tLS0tLS0tLV0gIDM1JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT4tLS0tLS0tLS0tLS0tLS0tXSAgMzYlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09Pi0tLS0tLS0tLS0tLS0tLS1dICAzNyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT0+LS0tLS0tLS0tLS0tLS0tLV0gIDM4JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT0+LS0tLS0tLS0tLS0tLS0tXSAgMzglXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT4tLS0tLS0tLS0tLS0tLS1dICAzOSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09Pi0tLS0tLS0tLS0tLS0tLV0gIDQwJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT0+LS0tLS0tLS0tLS0tLS0tXSAgNDElXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT4tLS0tLS0tLS0tLS0tLS1dICA0MiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT4tLS0tLS0tLS0tLS0tLV0gIDQyJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09Pi0tLS0tLS0tLS0tLS0tXSAgNDMlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT0+LS0tLS0tLS0tLS0tLS1dICA0NCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT4tLS0tLS0tLS0tLS0tLV0gIDQ1JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09Pi0tLS0tLS0tLS0tLS0tXSAgNDYlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09Pi0tLS0tLS0tLS0tLS1dICA0NiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT0+LS0tLS0tLS0tLS0tLV0gIDQ3JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT4tLS0tLS0tLS0tLS0tXSAgNDglXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09Pi0tLS0tLS0tLS0tLS1dICA0OSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT0+LS0tLS0tLS0tLS0tLV0gIDUwJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT0+LS0tLS0tLS0tLS0tXSAgNTAlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT4tLS0tLS0tLS0tLS1dICA1MSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09Pi0tLS0tLS0tLS0tLV0gIDUyJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT0+LS0tLS0tLS0tLS0tXSAgNTMlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT4tLS0tLS0tLS0tLS1dICA1NCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT4tLS0tLS0tLS0tLV0gIDU0JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09Pi0tLS0tLS0tLS0tXSAgNTUlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT0+LS0tLS0tLS0tLS1dICA1NiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT4tLS0tLS0tLS0tLV0gIDU3JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09Pi0tLS0tLS0tLS0tXSAgNTglXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09Pi0tLS0tLS0tLS1dICA1OCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT0+LS0tLS0tLS0tLV0gIDU5JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT4tLS0tLS0tLS0tXSAgNjAlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09Pi0tLS0tLS0tLS1dICA2MSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT0+LS0tLS0tLS0tLV0gIDYyJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT0+LS0tLS0tLS0tXSAgNjIlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT4tLS0tLS0tLS1dICA2MyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09Pi0tLS0tLS0tLV0gIDY0JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT0+LS0tLS0tLS0tXSAgNjUlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT4tLS0tLS0tLS1dICA2NiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT4tLS0tLS0tLV0gIDY2JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09Pi0tLS0tLS0tXSAgNjclXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT0+LS0tLS0tLS1dICA2OCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT4tLS0tLS0tLV0gIDY5JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09Pi0tLS0tLS0tXSAgNzAlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09Pi0tLS0tLS1dICA3MCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT0+LS0tLS0tLV0gIDcxJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT4tLS0tLS0tXSAgNzIlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09Pi0tLS0tLS1dICA3MyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT0+LS0tLS0tLV0gIDc0JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT0+LS0tLS0tXSAgNzQlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT4tLS0tLS1dICA3NSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09Pi0tLS0tLV0gIDc2JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT0+LS0tLS0tXSAgNzclXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT4tLS0tLS1dICA3OCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT4tLS0tLV0gIDc4JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09Pi0tLS0tXSAgNzklXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT0+LS0tLS1dICA4MCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT4tLS0tLV0gIDgxJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09Pi0tLS0tXSAgODIlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09Pi0tLS1dICA4MiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT0+LS0tLV0gIDgzJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT4tLS0tXSAgODQlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09Pi0tLS1dICA4NSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT0+LS0tLV0gIDg2JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT0+LS0tXSAgODYlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09PT4tLS1dICA4NyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT09Pi0tLV0gIDg4JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT0+LS0tXSAgODklXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09PT4tLS1dICA5MCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT09PT4tLV0gIDkwJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT09Pi0tXSAgOTElXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09PT0+LS1dICA5MiVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT09PT4tLV0gIDkzJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT09Pi0tXSAgOTQlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09PT09Pi1dICA5NCVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT09PT0+LV0gIDk1JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT09PT4tXSAgOTYlXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09PT09Pi1dICA5NyVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT09PT0+LV0gIDk4JVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT09PT0+XSAgOTglXG4gQWNjZXNzaW5nIHBvaW50IGVsZXZhdGlvbnMgWz09PT09PT09PT09PT09PT09PT09PT09PT5dICA5OSVcbiBBY2Nlc3NpbmcgcG9pbnQgZWxldmF0aW9ucyBbPT09PT09PT09PT09PT09PT09PT09PT09Pl0gMTAwJVxuIEFjY2Vzc2luZyBwb2ludCBlbGV2YXRpb25zIFs9PT09PT09PT09PT09PT09PT09PT09PT09XSAxMDAlXG4ifQ== -->
+<pre><code>Downloading point elevations:
+
+ Accessing point elevations [-------------------------]   0%
+ Accessing point elevations [-------------------------]   1%
+ Accessing point elevations [-------------------------]   2%
+ Accessing point elevations [&gt;------------------------]   2%
+ Accessing point elevations [&gt;------------------------]   3%
+ Accessing point elevations [&gt;------------------------]   4%
+ Accessing point elevations [&gt;------------------------]   5%
+ Accessing point elevations [&gt;------------------------]   6%
+ Accessing point elevations [=&gt;-----------------------]   6%
+ Accessing point elevations [=&gt;-----------------------]   7%
+ Accessing point elevations [=&gt;-----------------------]   8%
+ Accessing point elevations [=&gt;-----------------------]   9%
+ Accessing point elevations [=&gt;-----------------------]  10%
+ Accessing point elevations [==&gt;----------------------]  10%
+ Accessing point elevations [==&gt;----------------------]  11%
+ Accessing point elevations [==&gt;----------------------]  12%
+ Accessing point elevations [==&gt;----------------------]  13%
+ Accessing point elevations [==&gt;----------------------]  14%
+ Accessing point elevations [===&gt;---------------------]  14%
+ Accessing point elevations [===&gt;---------------------]  15%
+ Accessing point elevations [===&gt;---------------------]  16%
+ Accessing point elevations [===&gt;---------------------]  17%
+ Accessing point elevations [===&gt;---------------------]  18%
+ Accessing point elevations [====&gt;--------------------]  18%
+ Accessing point elevations [====&gt;--------------------]  19%
+ Accessing point elevations [====&gt;--------------------]  20%
+ Accessing point elevations [====&gt;--------------------]  21%
+ Accessing point elevations [====&gt;--------------------]  22%
+ Accessing point elevations [=====&gt;-------------------]  22%
+ Accessing point elevations [=====&gt;-------------------]  23%
+ Accessing point elevations [=====&gt;-------------------]  24%
+ Accessing point elevations [=====&gt;-------------------]  25%
+ Accessing point elevations [=====&gt;-------------------]  26%
+ Accessing point elevations [======&gt;------------------]  26%
+ Accessing point elevations [======&gt;------------------]  27%
+ Accessing point elevations [======&gt;------------------]  28%
+ Accessing point elevations [======&gt;------------------]  29%
+ Accessing point elevations [======&gt;------------------]  30%
+ Accessing point elevations [=======&gt;-----------------]  30%
+ Accessing point elevations [=======&gt;-----------------]  31%
+ Accessing point elevations [=======&gt;-----------------]  32%
+ Accessing point elevations [=======&gt;-----------------]  33%
+ Accessing point elevations [=======&gt;-----------------]  34%
+ Accessing point elevations [========&gt;----------------]  34%
+ Accessing point elevations [========&gt;----------------]  35%
+ Accessing point elevations [========&gt;----------------]  36%
+ Accessing point elevations [========&gt;----------------]  37%
+ Accessing point elevations [========&gt;----------------]  38%
+ Accessing point elevations [=========&gt;---------------]  38%
+ Accessing point elevations [=========&gt;---------------]  39%
+ Accessing point elevations [=========&gt;---------------]  40%
+ Accessing point elevations [=========&gt;---------------]  41%
+ Accessing point elevations [=========&gt;---------------]  42%
+ Accessing point elevations [==========&gt;--------------]  42%
+ Accessing point elevations [==========&gt;--------------]  43%
+ Accessing point elevations [==========&gt;--------------]  44%
+ Accessing point elevations [==========&gt;--------------]  45%
+ Accessing point elevations [==========&gt;--------------]  46%
+ Accessing point elevations [===========&gt;-------------]  46%
+ Accessing point elevations [===========&gt;-------------]  47%
+ Accessing point elevations [===========&gt;-------------]  48%
+ Accessing point elevations [===========&gt;-------------]  49%
+ Accessing point elevations [===========&gt;-------------]  50%
+ Accessing point elevations [============&gt;------------]  50%
+ Accessing point elevations [============&gt;------------]  51%
+ Accessing point elevations [============&gt;------------]  52%
+ Accessing point elevations [============&gt;------------]  53%
+ Accessing point elevations [============&gt;------------]  54%
+ Accessing point elevations [=============&gt;-----------]  54%
+ Accessing point elevations [=============&gt;-----------]  55%
+ Accessing point elevations [=============&gt;-----------]  56%
+ Accessing point elevations [=============&gt;-----------]  57%
+ Accessing point elevations [=============&gt;-----------]  58%
+ Accessing point elevations [==============&gt;----------]  58%
+ Accessing point elevations [==============&gt;----------]  59%
+ Accessing point elevations [==============&gt;----------]  60%
+ Accessing point elevations [==============&gt;----------]  61%
+ Accessing point elevations [==============&gt;----------]  62%
+ Accessing point elevations [===============&gt;---------]  62%
+ Accessing point elevations [===============&gt;---------]  63%
+ Accessing point elevations [===============&gt;---------]  64%
+ Accessing point elevations [===============&gt;---------]  65%
+ Accessing point elevations [===============&gt;---------]  66%
+ Accessing point elevations [================&gt;--------]  66%
+ Accessing point elevations [================&gt;--------]  67%
+ Accessing point elevations [================&gt;--------]  68%
+ Accessing point elevations [================&gt;--------]  69%
+ Accessing point elevations [================&gt;--------]  70%
+ Accessing point elevations [=================&gt;-------]  70%
+ Accessing point elevations [=================&gt;-------]  71%
+ Accessing point elevations [=================&gt;-------]  72%
+ Accessing point elevations [=================&gt;-------]  73%
+ Accessing point elevations [=================&gt;-------]  74%
+ Accessing point elevations [==================&gt;------]  74%
+ Accessing point elevations [==================&gt;------]  75%
+ Accessing point elevations [==================&gt;------]  76%
+ Accessing point elevations [==================&gt;------]  77%
+ Accessing point elevations [==================&gt;------]  78%
+ Accessing point elevations [===================&gt;-----]  78%
+ Accessing point elevations [===================&gt;-----]  79%
+ Accessing point elevations [===================&gt;-----]  80%
+ Accessing point elevations [===================&gt;-----]  81%
+ Accessing point elevations [===================&gt;-----]  82%
+ Accessing point elevations [====================&gt;----]  82%
+ Accessing point elevations [====================&gt;----]  83%
+ Accessing point elevations [====================&gt;----]  84%
+ Accessing point elevations [====================&gt;----]  85%
+ Accessing point elevations [====================&gt;----]  86%
+ Accessing point elevations [=====================&gt;---]  86%
+ Accessing point elevations [=====================&gt;---]  87%
+ Accessing point elevations [=====================&gt;---]  88%
+ Accessing point elevations [=====================&gt;---]  89%
+ Accessing point elevations [=====================&gt;---]  90%
+ Accessing point elevations [======================&gt;--]  90%
+ Accessing point elevations [======================&gt;--]  91%
+ Accessing point elevations [======================&gt;--]  92%
+ Accessing point elevations [======================&gt;--]  93%
+ Accessing point elevations [======================&gt;--]  94%
+ Accessing point elevations [=======================&gt;-]  94%
+ Accessing point elevations [=======================&gt;-]  95%
+ Accessing point elevations [=======================&gt;-]  96%
+ Accessing point elevations [=======================&gt;-]  97%
+ Accessing point elevations [=======================&gt;-]  98%
+ Accessing point elevations [========================&gt;]  98%
+ Accessing point elevations [========================&gt;]  99%
+ Accessing point elevations [========================&gt;] 100%
+ Accessing point elevations [=========================] 100%</code></pre>
+<!-- rnb-output-end -->
+<!-- rnb-output-begin eyJkYXRhIjoiTm90ZTogRWxldmF0aW9uIHVuaXRzIGFyZSBpbiBtZXRlcnNcbiJ9 -->
+<pre><code>Note: Elevation units are in meters</code></pre>
+<!-- rnb-output-end -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuc3Rfd3JpdGUoZWxldmF0aW9uX3BmYXMsIFwiaHVjX2VsZXZhdGlvbl9kYXRhc2V0cy9wZmFzX0hVQ19lbGV2YXRpb24uZ3BrZ1wiKVxuYGBgIn0= -->
+<pre class="r"><code>st_write(elevation_pfas, &quot;huc_elevation_datasets/pfas_HUC_elevation.gpkg&quot;)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-output-begin eyJkYXRhIjoiV3JpdGluZyBsYXllciBgcGZhc19IVUNfZWxldmF0aW9uJyB0byBkYXRhIHNvdXJjZSBcbiAgYGh1Y19lbGV2YXRpb25fZGF0YXNldHMvcGZhc19IVUNfZWxldmF0aW9uLmdwa2cnIHVzaW5nIGRyaXZlciBgR1BLRydcbldyaXRpbmcgMTc3MyBmZWF0dXJlcyB3aXRoIDI1IGZpZWxkcyBhbmQgZ2VvbWV0cnkgdHlwZSBQb2ludC5cbiJ9 -->
+<pre><code>Writing layer `pfas_HUC_elevation&#39; to data source 
+  `huc_elevation_datasets/pfas_HUC_elevation.gpkg&#39; using driver `GPKG&#39;
+Writing 1773 features with 25 fields and geometry type Point.</code></pre>
+<!-- rnb-output-end -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxucm0ocGZhc19zZiwgaW50ZXJzZWN0ZWRfcGZhc193YmQsIGh1Y19wZmFzX3NmKVxuYGBgIn0= -->
+<pre class="r"><code>rm(pfas_sf, intersected_pfas_wbd, huc_pfas_sf)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
 </div>
 </div>
 
-<div id="rmd-source-code">LS0tCnRpdGxlOiAiR2V0IEhVQy0xMiBDb2RlcyBhbmQgRWxldmF0aW9ucyBmb3IgQWxsIFBvaW50IFNvdXJjZXMiCmF1dGhvcjogTGluZHNheSBQb2lyaWVyCmRhdGU6ICJgciBmb3JtYXQoU3lzLnRpbWUoKSwgJyVkICVCLCAlWScpYCIKb3V0cHV0OiBodG1sX25vdGVib29rCmVkaXRvcl9vcHRpb25zOiAKICBjaHVua19vdXRwdXRfdHlwZTogaW5saW5lCi0tLQoKVGhlIHB1cnBvc2Ugb2YgdGhlIGNvZGUgcHJlc2VudGVkIGluIHRoaXMgZG9jdW1lbnQgaXMgdG8gY29tcG9zZSB0aGUgZmluYWwgZGF0YXNldHMgdGhhdCB3aWxsIGJlIHVzZWQgdG8gYW5hbHl6ZSBjYXJjZXJhbCBmYWNpbGl0eSBwcm94aW1pdHkgdG8gcG90ZW50aWFsIFBGQVMgc2l0ZXMuIFRvd2FyZHMgdGhpcyBlbmQsIHRoZSBjb2RlOgoKMS4gTG9hZHMgc291cmNlIGRhdGFzZXRzIGFuZCB0cmFuc2Zvcm1zIHRoZW0gdG8gYSBjb21tb24gQ1JTICg0MjY5KQoyLiBEZXRlcm1pbmVzIHdoaWNoIHdhdGVyc2hlZCBib3VuZGFyeSAoSFVDLTEyKSBlYWNoIGZhY2lsaXR5IGluIHRoZSBzb3VyY2UgZGF0YXNldHMgZ2VvLXNwYXRpYWxseSBpbnRlcnNlY3Qgd2l0aAozLiBEZXRlcm1pbmVzIHRoZSBlbGV2YXRpb24gb2YgZWFjaCBmYWNpbGl0eSBpbiB0aGUgc291cmNlIGRhdGFzZXRzIHZpYSB0aGUgVVNHUyBFbGV2YXRpb24gUG9pbnQgUXVlcnkgU2VydmljZQo0LiBTYXZlcyBhbGwgbmV3IGRhdGFzZXRzIGFzIC5ncGtnIGZpbGVzIGZvciB1c2UgaW4gSFVDX2FuYWx5c2lzLlJtZAoKPiBOb3RlczogTmV3IGZpbGVzIGFyZSBzYXZlZCBvZnRlbiB0aHJvdWdob3V0IHRoZSBjb2RlIHRvIHByZXZlbnQgaGF2aW5nIHRvIHJlLWV4ZWN1dGUgY29tcHV0YXRpb25hbGx5IGhlYXZ5IGFyZWFzIHNob3VsZCBSU3R1ZGlvIGdldCBodW5nIHVwLiBBbGwgZmlsZXMgdGhhdCBhcmUgdW5uZWNlc3NhcnkgZm9yIEhVQ19hbmFseXNpcy5SbWQgYXJlIHVubGlua2VkIGV2ZW50dWFsbHkuIAoKIyMgTG9hZCBQYWNrYWdlcwoKYGBge3J9CmxpYnJhcnkodGlkeXZlcnNlKQpsaWJyYXJ5KHNmKQpsaWJyYXJ5KHJnZW9zKQpsaWJyYXJ5KHJlYWR4bCkKbGlicmFyeShlbGV2YXRyKQpgYGAKCiMjIExvYWQgU291cmNlIERhdGFzZXRzCgojIyMgQ2FyY2VyYWwgRmFjaWxpdGllcwoKPiBTb3VyY2U6IERlcGFydG1lbnQgb2YgSG9tZWxhbmQgU2VjdXJpdHkuICJQcmlzb24gQm91bmRhcmllcy4iIEhvbWVsYW5kIEluZnJhc3RydWN0dXJlIEZvdW5kYXRpb24gTGV2ZWwgRGF0YSwgSnVseSA3LCAyMDIwLiBbaHR0cHM6Ly9oaWZsZC1nZW9wbGF0Zm9ybS5vcGVuZGF0YS5hcmNnaXMuY29tL2RhdGFzZXRzL2dlb3BsYXRmb3JtOjpwcmlzb24tYm91bmRhcmllcy9hYm91dF0oaHR0cHM6Ly9oaWZsZC1nZW9wbGF0Zm9ybS5vcGVuZGF0YS5hcmNnaXMuY29tL2RhdGFzZXRzL2dlb3BsYXRmb3JtOjpwcmlzb24tYm91bmRhcmllcy9hYm91dCkKCmBgYHtyfQpwYl9zZiA8LSBzdF9yZWFkKCJzb3VyY2VfZGF0YXNldHMvUHJpc29uX0JvdW5kYXJpZXMtc2hwL1ByaXNvbl9Cb3VuZGFyaWVzLnNocCIpICU+JQogIHN0X3RyYW5zZm9ybShjcnMgPSA0MjY5KSAlPiUKICBzdF90cmFuc2Zvcm0oY3JzID0gMzI2MTcpICU+JSAjY29udmVydCB0byB1dG0gZm9yIGNhbGN1bGF0aW5nIGNlbnRyb2lkcwogIHN0X2NlbnRyb2lkKCkgJT4lICNjZW50cm9pZHMgZnJvbSBvcmlnaW5hbCBtdWx0aXBvbHlnb25zCiAgc3RfdHJhbnNmb3JtKGNycyA9IDQyNjkpICNiYWNrIHRvIDQyNjkKYGBgCgpgYGB7cn0Kc3VzcF9jb250IDwtIHJlYWRfY3N2KCJzb3VyY2VfZGF0YXNldHMvc3VzcGVjdGVkX2NvbnRhbWluYXRpb25fMjIwNzEyLmNzdiIpICU+JQogIHNlbGVjdCgtMSkgJT4lCiAgcmVuYW1lKEluZGV4ID0gWCkgJT4lCiAgc3RfYXNfc2YoY29vcmRzPWMoIkxvbmdpdHVkZSIsIkxhdGl0dWRlIiksIGNycyA9IDQzMjYpICU+JQogIHN0X3RyYW5zZm9ybShjcnMgPSA0MjY5KSAjYmFjayB0byA0MjY5CmBgYAoKCgojIyBTdW1tYXJpZXMgb2YgZmFjaWxpdHkgdG90YWxzCgojIyMgSG93IG1hbnkgZmFjaWxpdGllcyB3ZXJlIGFuYWx5emVkIGluIGVhY2ggY2F0ZWdvcnk/CgpUaGlzIGNvZGUgYmxvY2sgcHJvZHVjZXMgYSB0YWJsZSBsaXN0aW5nIHRoZSBudW1iZXIgb2YgZmFjaWxpdGllcyB0aGF0IHdlcmUgYW5hbHl6ZWQgaW4gZWFjaCBjYXRlZ29yeS4KCmBgYHtyfQpzdXNwX2NvbnQgJT4lCiAgc3RfZHJvcF9nZW9tZXRyeSgpICU+JQogIGdyb3VwX2J5KFNvdXJjZSkgJT4lCiAgc3VtbWFyaXplKENvdW50ID0gbigpKQoKYGBgCgojIyMgSG93IG1hbnkgY2FyY2VyYWwgZmFjaWxpdGllcyB3ZXJlIG5vdCBvcGVuIG9yIG1pc3NpbmcgcG9wdWxhdGlvbiBkYXRhPwoKVGhlIERlcGFydG1lbnQgb2YgSG9tZWxhbmQgU2VjdXJpdHkgZXh0cmFjdHMgaW5mb3JtYXRpb24gYWJvdXQgZmFjaWxpdHkgb3BlcmF0aW5nIHN0YXR1c2VzLCBjYXBhY2l0aWVzLCBhbmQgY3VycmVudCBwb3B1bGF0aW9ucyBmcm9tIGNpdHksIGNvdW50eSwgYW5kIHN0YXRlIHdlYnNpdGVzIGFuZCBkb2N1bWVudHMuIFRoYXQgZGF0YSBpcyBtaXNzaW5nIGZyb20gdGhpcyBkYXRhc2V0IGlmIGl0IGhhc24ndCBiZWVuIHJlY29yZGVkIHZpYSB0aGVzZSBzb3VyY2VzLiAKCmBgYHtyfQpwYl9zZiAlPiUKICBzdF9zZXRfZ2VvbWV0cnkoTlVMTCkgJT4lCiAgc3VtbWFyaXplKG51bV9ub3RfY2xvc2VkID0gc3VtKFNUQVRVUyAhPSAiQ0xPU0VEIiksCiAgICAgICAgICAgIHBlcmNlbnRfbm90X2Nsb3NlZCA9IHN1bShTVEFUVVMgIT0gIkNMT1NFRCIpIC8gbigpICogMTAwLAogICAgICAgICAgICBudW1fbWlzc2luZ19wb3AgPSBzdW0oUE9QVUxBVElPTiA9PSAtOTk5KSwKICAgICAgICAgICAgcGVyY2VudF9taXNzaW5nX3BvcCA9IHN1bShQT1BVTEFUSU9OID09IC05OTkpIC8gbigpICogMTAwKQogIApgYGAKCiMjIEdldCBIVUMtMTJzIEJvdW5kYXJ5IENvZGVzIGFuZCBFbGV2YXRpb25zIGZvciBFYWNoIFBvaW50IFNvdXJjZQoKPiBUaGUgSFVDLTEyIFdhdGVyc2hlZCBCb3VuZGFyeSBEYXRhc2V0IGlzIG5vdCBpbmNsdWRlZCBpbiB0aGUgR2l0SHViIHJlcG8gZHVlIHRvIHNpemUgKDEwMjk5MiByb3dzKS4gSXQgY2FuIGJlIGFjY2Vzc2VkIGF0IFtodHRwczovL3dhdGVyLnVzZ3MuZ292L0dJUy9odWMuaHRtbF0oaHR0cHM6Ly93YXRlci51c2dzLmdvdi9HSVMvaHVjLmh0bWwpCgpgYGB7cn0Kd2JkIDwtIHN0X3JlYWQoInNvdXJjZV9kYXRhc2V0cy9XQkRfTmF0aW9uYWxfR0RCL1dCRF9OYXRpb25hbF9HREIuZ2RiLyIpCmNoZWNrX3ZhbGlkaXR5IDwtIHN0X2lzX3ZhbGlkKHdiZCkKCiNXaGVuIHdlIHJhbiB0aGlzIGFuYWx5c2lzLCB0ZW4gcG9pbnRzIGZyb20gdGhlIHdhdGVyc2hlZCBib3VuZGFyeSBmaWxlIGhhZCBpbnZhbGlkIGdlb21ldHJ5LiBXZSB1c2VkIGZ1bmN0aW9ucyBmcm9tIHRoZSBzZiBwYWNrYWdlIHRvIG1ha2UgdGhlIGdlb21ldHJpZXMgdmFsaWQuIAoKd2JkX3ZhbGlkIDwtIHN0X21ha2VfdmFsaWQod2JkKQpybSh3YmQpCgpzdF93cml0ZSh3YmRfdmFsaWQsICJzb3VyY2VfZGF0YXNldHMvd2JkX3ZhbGlkLmdwa2ciKQpgYGAKCkZvciBlYWNoIHBvaW50IHNvdXJjZSwgd2UgZmlyc3QgZGV0ZXJtaW5lZCB3aGVyZSBwb2ludCBsb2NhdGlvbnMgaW50ZXJzZWN0ZWQgd2l0aCB3YXRlcnNoZWQgYm91bmRhcmllcy4gV2UgYWRkZWQgdGhlIGNvcnJlc3BvbmRpbmcgSFVDLTEyIGNvZGUgdG8gdGhlIHBvaW50IHNvdXJjZSBkYXRhLiBUaGVuLCB1c2luZyB0aGUgZWxldmF0ciBwYWNrYWdlICh3aGljaCBzdHJlYW1saW5lcyBhY2Nlc3MgdG8gdGhlIFVTR1MgRWxldmF0aW9uIFBvaW50IFF1ZXJ5IFNlcnZpY2UgQVBJKSwgd2UgZGV0ZXJtaW5lZCB0aGUgZWxldmF0aW9ucyBmb3IgZWFjaCBmYWNpbGl0eS4gCgojIyMgR2V0IEhVQyBhbmQgRWxldmF0aW9uIGZvciBDYXJjZXJhbCBGYWNpbGl0aWVzCgpgYGB7cn0KaW50ZXJzZWN0ZWRfcGJfd2JkIDwtIHN0X2ludGVyc2VjdHMocGJfc2YsIHdiZF92YWxpZCkKCmh1Y19wYl9zZiA8LSBwYl9zZiAlPiUKICBtdXRhdGUoaW50ZXJzZWN0aW9uID0gYXMuaW50ZWdlcihpbnRlcnNlY3RlZF9wYl93YmQpLAogICAgICAgICBIVUMgPSBpZl9lbHNlKGlzLm5hKGludGVyc2VjdGlvbiksICIiLAogICAgICAgICAgICAgICAgICAgICAgICB3YmRfdmFsaWQkaHVjMTJbaW50ZXJzZWN0aW9uXSkpCgplbGV2YXRpb25fcGIgPC0gZ2V0X2VsZXZfcG9pbnQoaHVjX3BiX3NmLCBwcmogPSA0MjY5LCBzcmMgPSAiZXBxcyIpCgpzdF93cml0ZShlbGV2YXRpb25fcGIsICJodWNfZWxldmF0aW9uX2RhdGFzZXRzL3BiX0hVQ19lbGV2YXRpb24uZ3BrZyIpCnJtKHBiX3NmLCBpbnRlcnNlY3RlZF9wYl93YmQsIGh1Y19wYl9zZikKYGBgCiMjIyBHZXQgSFVDIGFuZCBFbGV2YXRpb24gZm9yIFN1c3BlY3RlZCBTaXRlcwoKYGBge3J9CmludGVyc2VjdGVkX3N1c3BfY29udF93YmQgPC0gCiAgc3RfaW50ZXJzZWN0cyhzdXNwX2NvbnQsIHdiZF92YWxpZCkKCmh1Y19zdXNwX2NvbnRfc2YgPC0gCiAgc3VzcF9jb250ICU+JQogIG11dGF0ZShpbnRlcnNlY3Rpb24gPSBhcy5pbnRlZ2VyKGludGVyc2VjdGVkX3N1c3BfY29udF93YmQpLAogICAgICAgICBIVUMgPSBpZl9lbHNlKGlzLm5hKGludGVyc2VjdGlvbiksICIiLAogICAgICAgICAgICAgICAgICAgICAgICB3YmRfdmFsaWQkaHVjMTJbaW50ZXJzZWN0aW9uXSkpCgojRWxldmF0aW9uIEFQSSByZXF1ZXN0cyBhcmUgaGFuZGxlZCBpbiBjaHVua3MgdG8gYXZvaWQgdGltZW91dHMuCgpnZXRfZWxldiA8LSBmdW5jdGlvbihkYXRhKXsKICAKICByb3dfbnVtIDwtIGRhdGEgJT4lIAogICAgc3RfZHJvcF9nZW9tZXRyeSgpICU+JQogICAgc2xpY2UoMSkgJT4lIAogICAgc2VsZWN0KEluZGV4KSAlPiUgCiAgICBwdWxsKCkKICAKICBwcmludChwYXN0ZSgiQ29sbGVjdGluZyBlbGV2YXRpb24gZm9yIGRhdGEgc3RhcnRpbmcgYXQgcm93Iiwgcm93X251bSkpCiAgCiAgZWxldmF0aW9uX3N1c3BfY29udF94IDwtIAogICAgZ2V0X2VsZXZfcG9pbnQoZGF0YSwgCiAgICAgICAgICAgICAgICAgICBwcmogPSA0MjY5LCAKICAgICAgICAgICAgICAgICAgIHNyYyA9ICJlcHFzIikKfQoKbiA8LSAgNTAwMCAKCmh1Y19zdXNwX2NvbnRfc2Zfc2xpY2VkIDwtIAogIGh1Y19zdXNwX2NvbnRfc2YgJT4lIAogIGdyb3VwX2J5KHJvd19udW1iZXIoKSAlLyUgbikgJT4lIAogIGdyb3VwX21hcCh+IC54KQoKZWxldmF0aW9uX3N1c3BfY29udCA8LSAKICBtYXBfZGZyKGh1Y19zdXNwX2NvbnRfc2Zfc2xpY2VkLCAKICAgICAgICAgIGdldF9lbGV2KQoKc3Rfd3JpdGUoZWxldmF0aW9uX3N1c3BfY29udCwgImh1Y19lbGV2YXRpb25fZGF0YXNldHMvc3VzcF9jb250X0hVQ19lbGV2YXRpb24uZ3BrZyIpCgpybShzdXNwX2NvbnQsIGludGVyc2VjdGVkX3N1c3BfY29udF93YmQsIGh1Y19zdXNwX2NvbnRfc2Zfc2xpY2VkLCBodWNfc3VzcF9jb250X3NmKQpgYGAKCg==</div>
+<div id="rmd-source-code">LS0tCnRpdGxlOiAiR2V0IEhVQy0xMiBDb2RlcyBhbmQgRWxldmF0aW9ucyBmb3IgQWxsIFBvaW50IFNvdXJjZXMiCmF1dGhvcjogTGluZHNheSBQb2lyaWVyCmRhdGU6ICJgciBmb3JtYXQoU3lzLnRpbWUoKSwgJyVkICVCLCAlWScpYCIKb3V0cHV0OiBodG1sX25vdGVib29rCmVkaXRvcl9vcHRpb25zOiAKICBjaHVua19vdXRwdXRfdHlwZTogaW5saW5lCi0tLQoKVGhlIHB1cnBvc2Ugb2YgdGhlIGNvZGUgcHJlc2VudGVkIGluIHRoaXMgZG9jdW1lbnQgaXMgdG8gY29tcG9zZSB0aGUgZmluYWwgZGF0YXNldHMgdGhhdCB3aWxsIGJlIHVzZWQgdG8gYW5hbHl6ZSBjYXJjZXJhbCBmYWNpbGl0eSBwcm94aW1pdHkgdG8gcG90ZW50aWFsIFBGQVMgc2l0ZXMuIFRvd2FyZHMgdGhpcyBlbmQsIHRoZSBjb2RlOgoKMS4gTG9hZHMgc291cmNlIGRhdGFzZXRzIGFuZCB0cmFuc2Zvcm1zIHRoZW0gdG8gYSBjb21tb24gQ1JTICg0MjY5KQoyLiBEZXRlcm1pbmVzIHdoaWNoIHdhdGVyc2hlZCBib3VuZGFyeSAoSFVDLTEyKSBlYWNoIGZhY2lsaXR5IGluIHRoZSBzb3VyY2UgZGF0YXNldHMgZ2VvLXNwYXRpYWxseSBpbnRlcnNlY3Qgd2l0aAozLiBEZXRlcm1pbmVzIHRoZSBlbGV2YXRpb24gb2YgZWFjaCBmYWNpbGl0eSBpbiB0aGUgc291cmNlIGRhdGFzZXRzIHZpYSB0aGUgVVNHUyBFbGV2YXRpb24gUG9pbnQgUXVlcnkgU2VydmljZQo0LiBTYXZlcyBhbGwgbmV3IGRhdGFzZXRzIGFzIC5ncGtnIGZpbGVzIGZvciB1c2UgaW4gSFVDX2FuYWx5c2lzLlJtZAoKPiBOb3RlczogTmV3IGZpbGVzIGFyZSBzYXZlZCBvZnRlbiB0aHJvdWdob3V0IHRoZSBjb2RlIHRvIHByZXZlbnQgaGF2aW5nIHRvIHJlLWV4ZWN1dGUgY29tcHV0YXRpb25hbGx5IGhlYXZ5IGFyZWFzIHNob3VsZCBSU3R1ZGlvIGdldCBodW5nIHVwLiBBbGwgZmlsZXMgdGhhdCBhcmUgdW5uZWNlc3NhcnkgZm9yIEhVQ19hbmFseXNpcy5SbWQgYXJlIHVubGlua2VkIGV2ZW50dWFsbHkuIAoKIyMgTG9hZCBQYWNrYWdlcwoKYGBge3J9CmxpYnJhcnkodGlkeXZlcnNlKQpsaWJyYXJ5KHNmKQpsaWJyYXJ5KHJnZW9zKQpsaWJyYXJ5KHJlYWR4bCkKbGlicmFyeShlbGV2YXRyKQpgYGAKCiMjIExvYWQgU291cmNlIERhdGFzZXRzCgojIyMgQ2FyY2VyYWwgRmFjaWxpdGllcwoKPiBTb3VyY2U6IERlcGFydG1lbnQgb2YgSG9tZWxhbmQgU2VjdXJpdHkuICJQcmlzb24gQm91bmRhcmllcy4iIEhvbWVsYW5kIEluZnJhc3RydWN0dXJlIEZvdW5kYXRpb24gTGV2ZWwgRGF0YSwgSnVseSA3LCAyMDIwLiBbaHR0cHM6Ly9oaWZsZC1nZW9wbGF0Zm9ybS5vcGVuZGF0YS5hcmNnaXMuY29tL2RhdGFzZXRzL2dlb3BsYXRmb3JtOjpwcmlzb24tYm91bmRhcmllcy9hYm91dF0oaHR0cHM6Ly9oaWZsZC1nZW9wbGF0Zm9ybS5vcGVuZGF0YS5hcmNnaXMuY29tL2RhdGFzZXRzL2dlb3BsYXRmb3JtOjpwcmlzb24tYm91bmRhcmllcy9hYm91dCkKCmBgYHtyfQpwYl9zZiA8LSBzdF9yZWFkKCJzb3VyY2VfZGF0YXNldHMvUHJpc29uX0JvdW5kYXJpZXMtc2hwL1ByaXNvbl9Cb3VuZGFyaWVzLnNocCIpICU+JQogIHN0X3RyYW5zZm9ybShjcnMgPSA0MjY5KSAlPiUKICBzdF90cmFuc2Zvcm0oY3JzID0gMzI2MTcpICU+JSAjY29udmVydCB0byB1dG0gZm9yIGNhbGN1bGF0aW5nIGNlbnRyb2lkcwogIHN0X2NlbnRyb2lkKCkgJT4lICNjZW50cm9pZHMgZnJvbSBvcmlnaW5hbCBtdWx0aXBvbHlnb25zCiAgc3RfdHJhbnNmb3JtKGNycyA9IDQyNjkpICNiYWNrIHRvIDQyNjkKYGBgCgpgYGB7cn0Kc3VzcF9jb250IDwtIHJlYWRfY3N2KCJzb3VyY2VfZGF0YXNldHMvc3VzcGVjdGVkX2NvbnRhbWluYXRpb25fMjIwNzEyLmNzdiIpICU+JQogIHNlbGVjdCgtMSkgJT4lCiAgcmVuYW1lKEluZGV4ID0gWCkgJT4lCiAgc3RfYXNfc2YoY29vcmRzPWMoIkxvbmdpdHVkZSIsIkxhdGl0dWRlIiksIGNycyA9IDQzMjYpICU+JQogIHN0X3RyYW5zZm9ybShjcnMgPSA0MjY5KSAjYmFjayB0byA0MjY5CmBgYAoKIyMjIFBGQVMKCmBgYHtyfQpwZmFzX3NmIDwtIHJlYWQuY3N2KCJzb3VyY2VfZGF0YXNldHMvcGZhcy5jc3YiKSAgJT4lCiAgZmlsdGVyKCFpcy5uYShsYXRpdHVkZSkgfCAhaXMubmEobG9uZ2l0dWRlKSkgJT4lCiAgc3RfYXNfc2YoY29vcmRzID0gYygibG9uZ2l0dWRlIiwgImxhdGl0dWRlIiksIGNycyA9IDQzMjYsIG5hLmZhaWwgPSBGQUxTRSkgJT4lCiAgc3RfdHJhbnNmb3JtKDQyNjkpCmBgYAoKIyMgU3VtbWFyaWVzIG9mIGZhY2lsaXR5IHRvdGFscwoKIyMjIEhvdyBtYW55IGZhY2lsaXRpZXMgd2VyZSBhbmFseXplZCBpbiBlYWNoIGNhdGVnb3J5PwoKVGhpcyBjb2RlIGJsb2NrIHByb2R1Y2VzIGEgdGFibGUgbGlzdGluZyB0aGUgbnVtYmVyIG9mIGZhY2lsaXRpZXMgdGhhdCB3ZXJlIGFuYWx5emVkIGluIGVhY2ggY2F0ZWdvcnkuCgpgYGB7cn0Kc3VzcF9jb250ICU+JQogIHN0X2Ryb3BfZ2VvbWV0cnkoKSAlPiUKICBncm91cF9ieShTb3VyY2UpICU+JQogIHN1bW1hcml6ZShDb3VudCA9IG4oKSkKYGBgCgojIyMgSG93IG1hbnkgY2FyY2VyYWwgZmFjaWxpdGllcyB3ZXJlIG5vdCBvcGVuIG9yIG1pc3NpbmcgcG9wdWxhdGlvbiBkYXRhPwoKVGhlIERlcGFydG1lbnQgb2YgSG9tZWxhbmQgU2VjdXJpdHkgZXh0cmFjdHMgaW5mb3JtYXRpb24gYWJvdXQgZmFjaWxpdHkgb3BlcmF0aW5nIHN0YXR1c2VzLCBjYXBhY2l0aWVzLCBhbmQgY3VycmVudCBwb3B1bGF0aW9ucyBmcm9tIGNpdHksIGNvdW50eSwgYW5kIHN0YXRlIHdlYnNpdGVzIGFuZCBkb2N1bWVudHMuIFRoYXQgZGF0YSBpcyBtaXNzaW5nIGZyb20gdGhpcyBkYXRhc2V0IGlmIGl0IGhhc24ndCBiZWVuIHJlY29yZGVkIHZpYSB0aGVzZSBzb3VyY2VzLiAKCmBgYHtyfQpwYl9zZiAlPiUKICBzdF9zZXRfZ2VvbWV0cnkoTlVMTCkgJT4lCiAgc3VtbWFyaXplKG51bV9ub3RfY2xvc2VkID0gc3VtKFNUQVRVUyAhPSAiQ0xPU0VEIiksCiAgICAgICAgICAgIHBlcmNlbnRfbm90X2Nsb3NlZCA9IHN1bShTVEFUVVMgIT0gIkNMT1NFRCIpIC8gbigpICogMTAwLAogICAgICAgICAgICBudW1fbWlzc2luZ19wb3AgPSBzdW0oUE9QVUxBVElPTiA9PSAtOTk5KSwKICAgICAgICAgICAgcGVyY2VudF9taXNzaW5nX3BvcCA9IHN1bShQT1BVTEFUSU9OID09IC05OTkpIC8gbigpICogMTAwKQogIApgYGAKCiMjIEdldCBIVUMtMTJzIEJvdW5kYXJ5IENvZGVzIGFuZCBFbGV2YXRpb25zIGZvciBFYWNoIFBvaW50IFNvdXJjZQoKPiBUaGUgSFVDLTEyIFdhdGVyc2hlZCBCb3VuZGFyeSBEYXRhc2V0IGlzIG5vdCBpbmNsdWRlZCBpbiB0aGUgR2l0SHViIHJlcG8gZHVlIHRvIHNpemUgKDEwMjk5MiByb3dzKS4gSXQgY2FuIGJlIGFjY2Vzc2VkIGF0IFtodHRwczovL3dhdGVyLnVzZ3MuZ292L0dJUy9odWMuaHRtbF0oaHR0cHM6Ly93YXRlci51c2dzLmdvdi9HSVMvaHVjLmh0bWwpCgpgYGB7cn0Kd2JkIDwtIHN0X3JlYWQoInNvdXJjZV9kYXRhc2V0cy9XQkRfTmF0aW9uYWxfR0RCL1dCRF9OYXRpb25hbF9HREIuZ2RiLyIpCmNoZWNrX3ZhbGlkaXR5IDwtIHN0X2lzX3ZhbGlkKHdiZCkKCiNXaGVuIHdlIHJhbiB0aGlzIGFuYWx5c2lzLCB0ZW4gcG9pbnRzIGZyb20gdGhlIHdhdGVyc2hlZCBib3VuZGFyeSBmaWxlIGhhZCBpbnZhbGlkIGdlb21ldHJ5LiBXZSB1c2VkIGZ1bmN0aW9ucyBmcm9tIHRoZSBzZiBwYWNrYWdlIHRvIG1ha2UgdGhlIGdlb21ldHJpZXMgdmFsaWQuIAoKd2JkX3ZhbGlkIDwtIHN0X21ha2VfdmFsaWQod2JkKQpybSh3YmQpCgpzdF93cml0ZSh3YmRfdmFsaWQsICJzb3VyY2VfZGF0YXNldHMvd2JkX3ZhbGlkLmdwa2ciKQpgYGAKCkZvciBlYWNoIHBvaW50IHNvdXJjZSwgd2UgZmlyc3QgZGV0ZXJtaW5lZCB3aGVyZSBwb2ludCBsb2NhdGlvbnMgaW50ZXJzZWN0ZWQgd2l0aCB3YXRlcnNoZWQgYm91bmRhcmllcy4gV2UgYWRkZWQgdGhlIGNvcnJlc3BvbmRpbmcgSFVDLTEyIGNvZGUgdG8gdGhlIHBvaW50IHNvdXJjZSBkYXRhLiBUaGVuLCB1c2luZyB0aGUgZWxldmF0ciBwYWNrYWdlICh3aGljaCBzdHJlYW1saW5lcyBhY2Nlc3MgdG8gdGhlIFVTR1MgRWxldmF0aW9uIFBvaW50IFF1ZXJ5IFNlcnZpY2UgQVBJKSwgd2UgZGV0ZXJtaW5lZCB0aGUgZWxldmF0aW9ucyBmb3IgZWFjaCBmYWNpbGl0eS4gCgojIyMgR2V0IEhVQyBhbmQgRWxldmF0aW9uIGZvciBDYXJjZXJhbCBGYWNpbGl0aWVzCgpgYGB7cn0KaW50ZXJzZWN0ZWRfcGJfd2JkIDwtIHN0X2ludGVyc2VjdHMocGJfc2YsIHdiZF92YWxpZCkKCmh1Y19wYl9zZiA8LSBwYl9zZiAlPiUKICBtdXRhdGUoaW50ZXJzZWN0aW9uID0gYXMuaW50ZWdlcihpbnRlcnNlY3RlZF9wYl93YmQpLAogICAgICAgICBIVUMgPSBpZl9lbHNlKGlzLm5hKGludGVyc2VjdGlvbiksICIiLAogICAgICAgICAgICAgICAgICAgICAgICB3YmRfdmFsaWQkaHVjMTJbaW50ZXJzZWN0aW9uXSkpCgplbGV2YXRpb25fcGIgPC0gZ2V0X2VsZXZfcG9pbnQoaHVjX3BiX3NmLCBwcmogPSA0MjY5LCBzcmMgPSAiZXBxcyIpCgpzdF93cml0ZShlbGV2YXRpb25fcGIsICJodWNfZWxldmF0aW9uX2RhdGFzZXRzL3BiX0hVQ19lbGV2YXRpb24uZ3BrZyIpCnJtKHBiX3NmLCBpbnRlcnNlY3RlZF9wYl93YmQsIGh1Y19wYl9zZikKYGBgCiMjIyBHZXQgSFVDIGFuZCBFbGV2YXRpb24gZm9yIFN1c3BlY3RlZCBTaXRlcwoKYGBge3J9CmludGVyc2VjdGVkX3N1c3BfY29udF93YmQgPC0gCiAgc3RfaW50ZXJzZWN0cyhzdXNwX2NvbnQsIHdiZF92YWxpZCkKCmh1Y19zdXNwX2NvbnRfc2YgPC0gCiAgc3VzcF9jb250ICU+JQogIG11dGF0ZShpbnRlcnNlY3Rpb24gPSBhcy5pbnRlZ2VyKGludGVyc2VjdGVkX3N1c3BfY29udF93YmQpLAogICAgICAgICBIVUMgPSBpZl9lbHNlKGlzLm5hKGludGVyc2VjdGlvbiksICIiLAogICAgICAgICAgICAgICAgICAgICAgICB3YmRfdmFsaWQkaHVjMTJbaW50ZXJzZWN0aW9uXSkpCgojRWxldmF0aW9uIEFQSSByZXF1ZXN0cyBhcmUgaGFuZGxlZCBpbiBjaHVua3MgdG8gYXZvaWQgdGltZW91dHMuCgpnZXRfZWxldiA8LSBmdW5jdGlvbihkYXRhKXsKICAKICByb3dfbnVtIDwtIGRhdGEgJT4lIAogICAgc3RfZHJvcF9nZW9tZXRyeSgpICU+JQogICAgc2xpY2UoMSkgJT4lIAogICAgc2VsZWN0KEluZGV4KSAlPiUgCiAgICBwdWxsKCkKICAKICBwcmludChwYXN0ZSgiQ29sbGVjdGluZyBlbGV2YXRpb24gZm9yIGRhdGEgc3RhcnRpbmcgYXQgcm93Iiwgcm93X251bSkpCiAgCiAgZWxldmF0aW9uX3N1c3BfY29udF94IDwtIAogICAgZ2V0X2VsZXZfcG9pbnQoZGF0YSwgCiAgICAgICAgICAgICAgICAgICBwcmogPSA0MjY5LCAKICAgICAgICAgICAgICAgICAgIHNyYyA9ICJlcHFzIikKfQoKbiA8LSAgNTAwMCAKCmh1Y19zdXNwX2NvbnRfc2Zfc2xpY2VkIDwtIAogIGh1Y19zdXNwX2NvbnRfc2YgJT4lIAogIGdyb3VwX2J5KHJvd19udW1iZXIoKSAlLyUgbikgJT4lIAogIGdyb3VwX21hcCh+IC54KQoKZWxldmF0aW9uX3N1c3BfY29udCA8LSAKICBtYXBfZGZyKGh1Y19zdXNwX2NvbnRfc2Zfc2xpY2VkLCAKICAgICAgICAgIGdldF9lbGV2KQoKc3Rfd3JpdGUoZWxldmF0aW9uX3N1c3BfY29udCwgImh1Y19lbGV2YXRpb25fZGF0YXNldHMvc3VzcF9jb250X0hVQ19lbGV2YXRpb24uZ3BrZyIpCgpybShzdXNwX2NvbnQsIGludGVyc2VjdGVkX3N1c3BfY29udF93YmQsIGh1Y19zdXNwX2NvbnRfc2Zfc2xpY2VkLCBodWNfc3VzcF9jb250X3NmKQpgYGAKIyMjIEdldCBIVUMgYW5kIEVsZXZhdGlvbiBmb3IgUEZBUyBTaXRlcwoKYGBge3J9CmludGVyc2VjdGVkX3BmYXNfd2JkIDwtIHN0X2ludGVyc2VjdHMocGZhc19zZiwgd2JkX3ZhbGlkKQoKaHVjX3BmYXNfc2YgPC0gcGZhc19zZiAlPiUKICBtdXRhdGUoaW50ZXJzZWN0aW9uID0gYXMuaW50ZWdlcihpbnRlcnNlY3RlZF9wZmFzX3diZCksCiAgICAgICAgIEhVQyA9IGlmX2Vsc2UoaXMubmEoaW50ZXJzZWN0aW9uKSwgIiIsCiAgICAgICAgICAgICAgICAgICAgICAgIHdiZF92YWxpZCRodWMxMltpbnRlcnNlY3Rpb25dKSkKCmVsZXZhdGlvbl9wZmFzIDwtIGdldF9lbGV2X3BvaW50KGh1Y19wZmFzX3NmLCBwcmogPSA0MjY5LCBzcmMgPSAiZXBxcyIpCgpzdF93cml0ZShlbGV2YXRpb25fcGZhcywgImh1Y19lbGV2YXRpb25fZGF0YXNldHMvcGZhc19IVUNfZWxldmF0aW9uLmdwa2ciKQpybShwZmFzX3NmLCBpbnRlcnNlY3RlZF9wZmFzX3diZCwgaHVjX3BmYXNfc2YpCmBgYAo=</div>
 
 
 

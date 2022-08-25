@@ -11,24 +11,14 @@ The purpose of the code presented in this document is to determine how many carc
 2. Joins carceral facility data to data representing the locations of each potential point source based on a shared HUC-12 code
 3. Filters to carceral facilities at a lower elevation than a potential point source as a proxy for hydrological flow direction
 4. Calculates the number of unique facilities in the same HUC-12 watershed boundary and at a lower elevation than each point source and a combination of point sources, along with the number of incarcerated people potentially impacted
-5. Presents increasingly conservative calculations by filtering the values down depending on whether facilities have been designated as not closed
+
 
 ## Load Packages
 
-```{r}
+```{r message=FALSE, warning=FALSE, include=FALSE}
 library(tidyverse)
 library(sf)
 library(rgeos)
-```
-
-## Load source data
-
-```{r}
-pb_sf <- st_read("source_datasets/Prison_Boundaries-shp/Prison_Boundaries.shp") %>%
-  st_transform(crs = 4269) %>%
-  st_transform(crs = 32617) %>% #convert to utm for calculating centroids
-  st_centroid() %>% #centroids from original multipolygons
-  st_transform(crs = 4269) #back to 4269
 ```
 
 ## Load point sources with HUC-12 and elevations 
@@ -36,23 +26,58 @@ pb_sf <- st_read("source_datasets/Prison_Boundaries-shp/Prison_Boundaries.shp") 
 All of these files were created in get_HUC_elevation.Rmd.
 
 ```{r}
-pb_huc_elevation <- st_read("huc_elevation_datasets/pb_HUC_elevation.gpkg")
-
-pb_huc_elevation_not_closed <- 
-  pb_huc_elevation %>%
+pb_huc_elevation <- st_read("huc_elevation_datasets/pb_HUC_elevation.gpkg") %>%
+    mutate(POPULATION = na_if(POPULATION, -999)) %>%
   filter(STATUS != "CLOSED")
 
-susp_cont_huc_elevation <- st_read("huc_elevation_datasets/susp_cont_HUC_elevation.gpkg")
+pb_huc_elevation_juv <- pb_huc_elevation %>%
+  filter(SECURELVL == "JUVENILE")
+
+susp_cont_huc_elevation <- st_read("huc_elevation_datasets/susp_cont_HUC_elevation.gpkg") %>%
+  mutate(Source = case_when(Source == "Formerly Used Defense Sies" |
+                     Source == "Military Installations, Ranges, and Training Areas" ~ "Military Installment",
+                   TRUE ~ Source))
+
+pfas_huc_elevation <- st_read("huc_elevation_datasets/pfas_huc_elevation.gpkg")
 ```
 
-## Join Point Sources to Carceral Facilities with Shared HUC-12
+## How many carceral facilities are missing population data? Are certain types have more missing information than others?
+
+```{r}
+missing_pop_juv <-
+  pb_huc_elevation %>%
+  st_drop_geometry() %>%
+  mutate(MISSING_POPULATION = case_when(is.na(POPULATION) ~ 1,
+                             TRUE ~ 0),
+         JUVENILE = case_when(SECURELVL == "JUVENILE" ~ "YES",
+                              TRUE ~ "NO")) %>%
+  group_by(JUVENILE) %>%
+  summarize(Total = n(),
+            Count_Missing_Pop = sum(MISSING_POPULATION), 
+            Percent_Missing_Pop = Count_Missing_Pop/n()*100)
+
+missing_pop_type <-
+  pb_huc_elevation %>%
+  st_drop_geometry() %>%
+  mutate(MISSING_POPULATION = case_when(is.na(POPULATION) ~ 1,
+                             TRUE ~ 0)) %>%
+  group_by(TYPE) %>%
+  summarize(Total = n(),
+            Count_Missing_Pop = sum(MISSING_POPULATION), 
+            Percent_Missing_Pop = Count_Missing_Pop/n()*100)
+  
+```
+
+## Presumptive and Known Point Source Analysis
+
+### Join Presumptive Point Sources to Carceral Facilities with Shared HUC-12
 
 This code will perform an inner join to link carceral facilities with PFAS point sources that share the same HUC-12 watershed boundary. It will filter to carceral facilities at a lower elevation than point sources.
 
 It will result in a data frame that can be used to calculate the total carceral facilities in the same HUC-12 watershed boundary and at a lower elevation than a PFAS point source. Note that at this point there may be duplicate carceral facilities in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the carceral facility.
 
-```{r}
-joined_df <-
+```{r message=FALSE, warning=FALSE, include=FALSE}
+pb_susp_cont_joined <-
   pb_huc_elevation %>%
   select(-elev_units) %>%
   rename(ELEVATION_CARCERAL = elevation) %>%
@@ -61,64 +86,40 @@ joined_df <-
                  st_set_geometry(NULL), 
                by = "HUC") %>%
     filter(ELEVATION_CARCERAL < elevation) %>%
-    mutate(POPULATION = na_if(POPULATION, -999)) %>%
     rename(SUSP_CONT_ID_COLUMN = Index,
            SUSP_CONT_SOURCE = Source,
            SUSP_CONT_DETAILS = Details) %>% 
-    select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL, SUSP_CONT_SOURCE, SUSP_CONT_DETAILS, SUSP_CONT_ID_COLUMN, SUSP_CONT_ID_COLUMN)
+    select(FACILITYID, POPULATION, TYPE, SECURELVL, STATE, SUSP_CONT_SOURCE, SUSP_CONT_DETAILS, SUSP_CONT_ID_COLUMN, SUSP_CONT_ID_COLUMN)
 
 ```
 
-## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Point Source
-
-This code calculates the number, percentage, and populations of carceral facilities in the same HUC-12 and at a lower elevation than each point source. The previous code produced a data frame in which a carceral facility may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This code reduces the file to unique carceral facilities by grouping variables specific to the facility. It then counts the number of observations in the data frame, the percentage of the total carceral facilities in the US this number represents, and the number of inmates potentially impacted. It performs the same operations filtering to not closed carceral facilities.
+### Join Known Point Sources to Carceral Facilities with Shared HUC-12
 
 ```{r}
-by_source <- 
-  joined_df %>%
-  group_by(SUSP_CONT_SOURCE) %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
-  distinct() %>%
-  summarize(TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
-            PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100,
-            AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE) / nrow(pb_huc_elevation_not_closed) * 100, 
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE)
-            )
+pb_pfas_joined <-
+  pb_huc_elevation %>%
+  select(-elev_units) %>%
+  rename(ELEVATION_CARCERAL = elevation) %>%
+  st_set_geometry(NULL) %>%
+  inner_join(pfas_huc_elevation %>% 
+                 st_set_geometry(NULL), 
+               by = "HUC") %>%
+    filter(ELEVATION_CARCERAL < elevation) %>%
+    rename(PFAS_ID_COLUMN = map_id,
+           PFAS_NAME = site_name,
+           PFAS_INDUSTRY = industry,
+           PFAS_SOURCE = suspected_source,
+           PFAS_STATE = state,
+           PFAS_LEVEL = pfas_level) %>% 
+    select(FACILITYID, NAME, POPULATION, TYPE, SECURELVL, STATE, PFAS_ID_COLUMN, PFAS_NAME, PFAS_INDUSTRY, PFAS_SOURCE, PFAS_LEVEL)
 
 ```
 
-## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Any Point Source
-
-This duplicates the code above without grouping by the suspected contamination source. 
-
-```{r}
-at_least_one_source <-
-  joined_df %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
-  distinct() %>%
-  summarize(TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
-            PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100,
-            AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE) / nrow(pb_huc_elevation_not_closed) * 100, 
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE)
-            ) %>%
-  mutate(SUSP_CONT_SOURCE = "At least one") %>%
-  relocate(SUSP_CONT_SOURCE, .before = TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC)
-
-```
-
-## Calculate Numbers and Percentages of Carceral Facilities in Proximity to Multiple Point Sources
-
-Inputs:
-
-* A number serving as a threshold for how many point sources to check whether proximate
+### Calculate Numbers and Percentages of Carceral Facilities in Proximity to Different Thresholds of Point Sources
 
 Purpose: 
 
-This replicates the above point source calculations but also takes as an input a threshold for the number of point sources to check whether carceral facilities are in proximity to. It:
+This code calculates the number, percentage, and populations of carceral facilities in the same HUC-12 and at a lower elevation than each point source. The previous code produced a data frame in which a carceral facility may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This code reduces the file to unique carceral facilities by grouping variables specific to the facility. It then counts the number of observations in the data frame, the percentage of the total carceral facilities in the US this number represents, and the number of inmates potentially impacted. Specifically,
 
 * groups rows representing the same carceral facility, 
 * filters to groups in which the number of observations (in this case representing proximate point sources) is greater than the threshold, 
@@ -127,83 +128,772 @@ This replicates the above point source calculations but also takes as an input a
 After this, the same calculations are performed as those performed above.
 
 ```{r}
-more_than_one_point_source_calculation <- function(threshold) {
-  joined_df %>%
+point_source_calculation <- function(source, threshold, text) {
+  source %>%
   group_by(FACILITYID) %>%
   filter(n() > threshold) %>%
   ungroup() %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
+  select(FACILITYID, POPULATION, TYPE, SECURELVL) %>%
   distinct() %>%
-  summarize(TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
-            PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100,
+  summarize(CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+            PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100, 
             AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(STATUS != "CLOSED", na.rm = TRUE) / nrow(pb_huc_elevation_not_closed) * 100, 
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[STATUS != "CLOSED"], na.rm = TRUE)
+            JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
+            PERC_JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pb_huc_elevation_juv) * 100,
+            AT_LEAST_JUV_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE),
+            NON_JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL != "JUVENILE"),
+            PERC_NON_JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL != "JUVENILE") / (nrow(pb_huc_elevation) - nrow(pb_huc_elevation_juv)) * 100,
+            AT_LEAST_NON_JUV_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL != "JUVENILE"], na.rm = TRUE)
             ) %>%
-  mutate(SUSP_CONT_SOURCE = paste("More than", threshold )) %>%
-  relocate(SUSP_CONT_SOURCE, .before = TOTAL_CARC_FAC_WITH_POINT_SOURCE_IN_HUC)
+  mutate(SUSP_CONT_SOURCE = paste("More than", threshold, text, "point sources" )) %>%
+  relocate(SUSP_CONT_SOURCE, .before = CARC_FAC_WITH_POINT_SOURCE_IN_HUC)
 }
 
-more_than_one_source <- more_than_one_point_source_calculation(1)
-more_than_five_source <- more_than_one_point_source_calculation(5)
+at_least_one_susp_source <- point_source_calculation(pb_susp_cont_joined, 0, "suspected")
+more_than_one_susp_source <- point_source_calculation(pb_susp_cont_joined, 1, "suspected")
+more_than_five_susp_source <- point_source_calculation(pb_susp_cont_joined, 5, "suspected")
+at_least_one_known_source <- point_source_calculation(pb_pfas_joined, 0, "known")
+more_than_one_known_source <- point_source_calculation(pb_pfas_joined, 1, "known")
+more_than_five_known_source <- point_source_calculation(pb_pfas_joined, 5, "known")
+
+totals_table <- 
+  rbind(at_least_one_susp_source, 
+        more_than_one_susp_source, 
+        more_than_five_susp_source,
+        at_least_one_known_source, 
+        more_than_one_known_source, 
+        more_than_five_known_source)
+
+write.csv(totals_table, "final_datasets/totals_table.csv")
+
+rm(at_least_one_susp_source,
+   more_than_one_susp_source,
+   more_than_five_susp_source,
+   at_least_one_known_source, 
+   more_than_one_known_source, 
+   more_than_five_known_source
+)
 ```
 
-```{r}
-table1 <- 
-  rbind(
-    by_source, 
-    at_least_one_source,
-    more_than_one_source,
-    more_than_five_source
-    )
+### Calculate Numbers and Percentages of Carceral Facilities in Proximity to Presumptive Point Source by Source
 
-write.csv(table1, "final_datasets/table1.csv")
-table1
+```{r message=FALSE, warning=FALSE, include=FALSE}
+susp_by_source <- 
+  pb_susp_cont_joined %>%
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION, TYPE, SECURELVL) %>%
+  distinct() %>%
+  summarize(CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+            PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100, 
+            AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
+            JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
+            PERC_JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pb_huc_elevation_juv) * 100,
+            AT_LEAST_JUV_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE)
+            )
+
+write.csv(susp_by_source, "final_datasets/known_by_source_table.csv")
+
+rm(susp_by_source_table)
 ```
 
-## Perform Point Source Calculations by Type to Create Table 2
+### Calculate Numbers and Percentages of Carceral Facilities in Proximity to Known Point Source by Source
 
-This takes the data frame created above in which each row represents a carceral facility/proximate PFAS point source pair. First it determines the distinct not closed carceral facilities that are proximate to at least one point source. The number of rows in this data frame is used as the denominator when calculating percentages in the first columns of this table. It also determines the distinct not closed *juvenile* carceral facilities that are proximate to at least one point source. The number of rows in this data frame is used as the denominator when calculating percentages in the final columns of this table. It then calculates the number, percentage, and populations of not closed carceral facilities proximate to at least one point source, as well as the number, percentage, and populations of not closed *juvenile* carceral facilities proximate to at least one point source. 
+This code calculates the number, percentage, and populations of carceral facilities in the same HUC-12 and at a lower elevation than each point source. The previous code produced a data frame in which a carceral facility may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This code reduces the file to unique carceral facilities by grouping variables specific to the facility. It then counts the number of observations in the data frame, the percentage of the total carceral facilities in the US this number represents, and the number of inmates potentially impacted.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+known_by_source <- 
+  pb_pfas_joined %>% 
+  group_by(PFAS_INDUSTRY) %>%
+  select(FACILITYID, POPULATION, TYPE, SECURELVL) %>%
+  distinct() %>%
+  summarize(CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+            PERC_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pb_huc_elevation) * 100, 
+            AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
+            JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
+            PERC_JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pb_huc_elevation_juv) * 100,
+            AT_LEAST_JUV_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE)
+            )
+
+write.csv(known_by_source, "final_datasets/known_by_source_table.csv")
+
+rm(known_by_source_table)
+```
+
+### Perform Presumptive Point Source Calculations by Type
+
+This takes the data frame created above in which each row represents a carceral facility/proximate PFAS point source pair. First it determines the distinct not closed carceral facilities that are proximate to at least one point source. The number of rows in this data frame is used as the denominator when calculating percentages in the first columns of this table. The number of rows in this data frame is used as the denominator when calculating percentages in the final columns of this table. It then calculates the number, percentage, and populations of not closed carceral facilities proximate to at least one point source. 
 
 ```{r}
-pbs_in_point_source_watershed_join_not_closed <- 
-  joined_df %>%
-  filter(STATUS != "CLOSED") %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
-  distinct()
-
-pbs_in_point_source_watershed_join_not_closed_juv <- 
-  joined_df %>%
-  filter(SECURELVL == "JUVENILE") %>%
-  select(FACILITYID, POPULATION, STATUS, TYPE, SECURELVL) %>%
-  distinct()
-
-by_type <-
-  pbs_in_point_source_watershed_join_not_closed %>%
+facility_type_totals <- 
+  pb_huc_elevation %>%
+  st_drop_geometry() %>%
   group_by(TYPE) %>%
-  summarize(NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pbs_in_point_source_watershed_join_not_closed) * 100,
-            AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
-            PERC_JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pbs_in_point_source_watershed_join_not_closed_juv) * 100,
-            AT_LEAST_JUV_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE))
+  summarize(TYPE_COUNT = n(),
+            JUV_TYPE_COUNT = sum(SECURELVL == "JUVENILE", na.rm = TRUE),
+            NON_JUV_TYPE_COUNT = sum(SECURELVL != "JUVENILE", na.rm = TRUE),
+            POP_COUNT = sum(POPULATION, na.rm = TRUE))
 
-by_type_totals <-
-  pbs_in_point_source_watershed_join_not_closed %>%
-  summarize(TYPE = "Total",
-            NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
-            PERC_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n() / nrow(pbs_in_point_source_watershed_join_not_closed) * 100,
-                        AT_LEAST_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE),
-            JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE"),
-            PERC_JUV_NOT_CLOSED_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = sum(SECURELVL == "JUVENILE") / nrow(pbs_in_point_source_watershed_join_not_closed_juv) * 100,
-            AT_LEAST_JUV_NOT_CLOSED_CARC_POP_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE))
+by_type_table <- function(source){
+  
+  pbs_at_least_one <- 
+    source %>%
+    select(FACILITYID, POPULATION, TYPE, SECURELVL) %>%
+    distinct()
 
-table2 <- 
-  rbind(by_type, by_type_totals)
+  pbs_at_least_one_juv <-
+    pbs_at_least_one %>%
+    filter(SECURELVL == "JUVENILE")
+  
+  by_pb_type <-
+    pbs_at_least_one %>%
+    left_join(facility_type_totals, by = "TYPE") %>%
+    group_by(TYPE) %>%
+    summarize(CARC_FAC_WITH_POINT_SOURCE_IN_HUC = n(),
+              PERC_CARC_FAC_DENOM_TOTAL_IN_HUC = 
+                n() / nrow(pbs_at_least_one) * 100,
+              PERC_CARC_FAC_DENOM_TOTAL_OF_TYPE = 
+                n() / TYPE_COUNT * 100,
+              AT_LEAST_CARC_POP_WITH_POINT_SOURCE_IN_HUC = 
+                sum(POPULATION, na.rm = TRUE),
+              JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = 
+                sum(SECURELVL == "JUVENILE", na.rm = TRUE),
+              PERC_JUV_CARC_FAC_DENOM_TOTAL_IN_HUC = 
+                sum(SECURELVL == "JUVENILE", na.rm = TRUE) /
+                nrow(pbs_at_least_one_juv) * 100,
+              PERC_JUV_CARC_FAC_DENOM_TOTAL_OF_TYPE = 
+                sum(SECURELVL == "JUVENILE", na.rm = TRUE) / 
+                JUV_TYPE_COUNT * 100,
+              AT_LEAST_JUV_CARC_POP_WITH_POINT_SOURCE_IN_HUC =
+                sum(POPULATION[SECURELVL == "JUVENILE"], na.rm = TRUE),
+              NON_JUV_CARC_FAC_WITH_POINT_SOURCE_IN_HUC = 
+                sum(SECURELVL != "JUVENILE", na.rm = TRUE),
+              PERC_NON_JUV_CARC_FAC_DENOM_TOTAL_IN_HUC = 
+                sum(SECURELVL != "JUVENILE", na.rm = TRUE) /
+                (nrow(pbs_at_least_one) -
+                   nrow(pbs_at_least_one_juv)) * 100,
+              PERC_NON_JUV_CARC_FAC_DENOM_TOTAL_OF_TYPE = 
+                sum(SECURELVL != "JUVENILE", na.rm = TRUE) /
+                NON_JUV_TYPE_COUNT * 100,
+              AT_LEAST_NON_JUV_CARC_POP_WITH_POINT_SOURCE_IN_HUC =
+                sum(POPULATION[SECURELVL != "JUVENILE"], na.rm = TRUE)) %>%
+    distinct()
+  
+  
+}
 
-write.csv(table2, "final_datasets/table2.csv")
-table2
+susp_by_pb_type <- by_type_table(pb_susp_cont_joined)
+known_by_pb_type <- by_type_table(pb_pfas_joined)
+
+write.csv(susp_by_pb_type, "final_datasets/susp_by_pb_type.csv")
+write.csv(known_by_pb_type, "final_datasets/known_by_pb_type.csv")
+
+
+```
+
+```{r}
+
+
+pb_susp_cont_joined %>% 
+  filter(SECURELVL != "JUVENILE") %>%
+  left_join(juv_facility_type_totals, by = "TYPE") %>%
+  select(FACILITYID, TYPE, TYPE_COUNT) %>%
+  distinct() %>%
+  group_by(TYPE) %>%
+  summarize(Yes = n(),
+            No = TYPE_COUNT - n(),
+            Per = Yes/TYPE_COUNT) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT")
+```
+
+
+
+## Plots
+
+### Counts of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  summarize(COUNT = n_distinct(FACILITYID)) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, COUNT)) %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = COUNT)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with Presumptive PFAS Contamination Sources", x = "Presumptive Contamination Source", y = "Count of Carceral Facilities")
+
+ggsave("final_datasets/susp_fac_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 2600,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+#### Known
+
+```{r}
+pb_pfas_joined %>% 
+  group_by(PFAS_INDUSTRY) %>%
+  summarize(Yes = n_distinct(FACILITYID),
+            No = nrow(pb_huc_elevation) - Yes) %>%
+  ungroup() %>%
+  mutate(PFAS_INDUSTRY = fct_reorder(PFAS_INDUSTRY, Yes)) %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = PFAS_INDUSTRY, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with At Least One Known PFAS Contamination Source", x = "PFAS Source", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/known_fac_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Percentages of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  summarize(Yes = n_distinct(FACILITYID),
+            No = nrow(pb_huc_elevation) - Yes) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, Yes)) %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with Presumptive PFAS Contamination Sources", x = "Presumptive Contamination Source", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the Presumptive source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/per_susp_fac_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Populations of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION) %>%
+  distinct() %>%
+  summarize(POP = sum(POPULATION, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, POP)) %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = POP)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Populations Co-Located with Presumptive PFAS Contamination Sources", 
+       x = "Presumptive Contamination Source", 
+       y = "Carceral Population (low estimate)")
+
+ggsave("final_datasets/susp_pop_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 2600,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Population Percentages of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION) %>%
+  distinct() %>%
+  summarize(Yes = sum(POPULATION, na.rm = TRUE),
+            No = sum(pb_huc_elevation$POPULATION, na.rm = TRUE) - Yes) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, Yes)) %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "POP") %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = POP, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Populations Co-Located with Presumptive PFAS Contamination Sources", 
+       x = "Presumptive Contamination Source", 
+       y = "Carceral Population (low estimate)", 
+       fill = "Is carceral population co-located in HUC-12 at a lower elevation than the Presumptive source?") +
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 8), 
+        legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/per_susp_pop_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Counts and Populations of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION) %>%
+  distinct() %>%
+  summarize(Yes_Count = n(),
+            No_Count = nrow(pb_huc_elevation) - Yes_Count,
+            Yes_Population = sum(POPULATION, na.rm = TRUE),
+            No_Population = sum(pb_huc_elevation$POPULATION, na.rm = TRUE) - Yes_Population) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, Yes_Count, .fun='max')) %>%
+  pivot_longer(Yes_Count:No_Population,
+    names_to = "COLOCATED",
+    values_to = "VALUE") %>%
+  separate(COLOCATED, 
+           into = c("COLOCATED", "MEASURE"),
+           sep = "_") %>%
+  filter(COLOCATED == "Yes") %>%
+  mutate(MEASURE = case_when(MEASURE == "Population" ~ "Carceral Population Co-located (low estimate)",
+                             TRUE ~ "Carceral Facilities Co-located")) %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = VALUE)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~MEASURE, scales = "free_x") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with Presumptive PFAS Contamination Sources", 
+       x = "Presumptive Contamination Source", 
+       y = "")
+
+ggsave("final_datasets/susp_fac_pop_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Counts and Percentages of Carceral Facilities in Proximity to Point Source by Juvenile
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>% 
+  mutate(JUVENILE = case_when(SECURELVL == "JUVENILE" ~ "Juvenile",
+                              TRUE ~ "Not Juvenile"),
+         DENOM = case_when(SECURELVL == "JUVENILE" ~ 
+                             nrow(pb_huc_elevation %>% 
+                                    filter(SECURELVL == "JUVENILE")),
+                           TRUE ~ 
+                             nrow(pb_huc_elevation %>%
+                                    filter(SECURELVL != "JUVENILE")))) %>%
+  select(FACILITYID, JUVENILE, DENOM) %>%
+  distinct() %>%
+  group_by(JUVENILE) %>%
+  summarize(Yes = n(),
+            No = DENOM - n(),
+            Per = Yes/DENOM) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = JUVENILE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with At Least One Presumptive PFAS Contamination Source", x = "Juvenile Facility?", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/susp_fac_by_juv.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+#### Known
+
+```{r}
+pb_pfas_joined %>% 
+  mutate(JUVENILE = case_when(SECURELVL == "JUVENILE" ~ "Juvenile",
+                              TRUE ~ "Not Juvenile"),
+         DENOM = case_when(SECURELVL == "JUVENILE" ~ 
+                             nrow(pb_huc_elevation %>% 
+                                    filter(SECURELVL == "JUVENILE")),
+                           TRUE ~ 
+                             nrow(pb_huc_elevation %>%
+                                    filter(SECURELVL != "JUVENILE")))) %>%
+  select(FACILITYID, JUVENILE, DENOM) %>%
+  distinct() %>%
+  group_by(JUVENILE) %>%
+  summarize(Yes = n(),
+            No = DENOM - n(),
+            Per = Yes/DENOM) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = JUVENILE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with At Least One Known PFAS Contamination Source", x = "Juvenile Facility?", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/known_fac_by_juv.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+
+### Plot Counts and Populations of Carceral Facilities in Proximity to Point Source by Type and Juvenile
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>%
+  select(FACILITYID, POPULATION, TYPE) %>%
+  left_join(facility_type_totals, by = "TYPE") %>%
+  distinct() %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  group_by(TYPE) %>%
+  summarize(Yes_Count = n(), 
+            No_Count = TYPE_COUNT - n(),
+            Yes_Population = sum(POPULATION, na.rm = TRUE),
+            No_Population = POP_COUNT - Yes_Population) %>%
+  ungroup() %>%
+  distinct() %>%
+  mutate(TYPE = fct_reorder(TYPE, Yes_Count, .fun='max')) %>%
+  pivot_longer(Yes_Count:No_Population,
+               names_to = "MEASURE",
+               values_to = "VALUE") %>%
+  separate(MEASURE, into = c("CO_LOCATED", "MEASURE"), sep = "_") %>%
+  ggplot(aes(x = TYPE, y = VALUE, fill = CO_LOCATED)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~MEASURE, scales = "free_x") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Types of Carceral Facilities Co-Located with Presumptive PFAS Contamination Sources", 
+       x = "Facility Type", 
+       y = "Carceral Facilties Co-located with Presumptive Contamination Source",
+       fill = "Co-Located?") +
+  theme(legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/susp_fac_pop_by_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+
+```
+#### Known
+
+```{r}
+pb_pfas_joined %>%
+  select(FACILITYID, POPULATION, TYPE, SECURELVL) %>%
+  distinct() %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  group_by(TYPE) %>%
+  summarize(Count = n(), 
+            Population = sum(POPULATION, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(TYPE = fct_reorder(TYPE, Count)) %>%
+  pivot_longer(Count:Population,
+               names_to = "MEASURE",
+               values_to = "VALUE") %>%
+  ggplot(aes(x = TYPE, y = VALUE)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~MEASURE, scales = "free_x") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Types of Carceral Facilities Co-Located with Known PFAS Contamination Sources", 
+       x = "Facility Type", 
+       y = "Carceral Facilties Co-located with Known Contamination Source")
+
+ggsave("final_datasets/known_fac_pop_by_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Counts and Populations of Juvenile Carceral Facilities in Proximity to Point Source by Type
+
+#### Presumptive
+
+```{r}
+juv_facility_type_totals <- 
+  pb_huc_elevation %>%
+  filter(SECURELVL != "JUVENILE") %>%
+  group_by(TYPE) %>%
+  summarize(TYPE_COUNT = n())
+
+pb_susp_cont_joined %>% 
+  filter(SECURELVL != "JUVENILE") %>%
+  left_join(juv_facility_type_totals, by = "TYPE") %>%
+  select(FACILITYID, TYPE, TYPE_COUNT) %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  distinct() %>%
+  group_by(TYPE) %>%
+  summarize(Yes = n(),
+            No = TYPE_COUNT - n(),
+            Per = Yes/TYPE_COUNT) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  mutate(TYPE = fct_reorder(TYPE, COUNT)) %>%
+  ggplot(aes(x = TYPE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Juvenile Carceral Facilities Co-Located with At Least One Presumptive PFAS Contamination Source", x = "Facility Type", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/susp_juv_fac_by_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+
+```
+#### Known
+
+```{r}
+juv_facility_type_totals <- 
+  pb_huc_elevation %>%
+  filter(SECURELVL == "JUVENILE") %>%
+  group_by(TYPE) %>%
+  summarize(TYPE_COUNT = n())
+
+pb_pfas_joined %>% 
+  filter(SECURELVL == "JUVENILE") %>%
+  left_join(juv_facility_type_totals, by = "TYPE") %>%
+  select(FACILITYID, TYPE, TYPE_COUNT) %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  distinct() %>%
+  group_by(TYPE) %>%
+  summarize(Yes = n(),
+            No = TYPE_COUNT - n(),
+            Per = Yes/TYPE_COUNT) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  mutate(TYPE = fct_reorder(TYPE, COUNT)) %>%
+  ggplot(aes(x = TYPE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Juvenile Carceral Facilities Co-Located with At Least One Known PFAS Contamination Source", x = "Facility Type", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/known_juv_fac_by_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+#### Combined
+
+```{r}
+juv_susp_colocated_facilities <-
+  pb_susp_cont_joined %>% 
+  filter(SECURELVL == "JUVENILE") %>%
+  select(FACILITYID) %>%
+  distinct() %>%
+  mutate(SUSP_COLOCATED = 1)
+  
+juv_known_colocated_facilities <-
+  pb_pfas_joined %>% 
+  filter(SECURELVL == "JUVENILE") %>%
+  select(FACILITYID) %>%
+  distinct() %>%
+  mutate(KNOWN_COLOCATED = 1)
+
+pb_huc_elevation %>%
+  st_drop_geometry() %>%
+  filter(SECURELVL == "JUVENILE") %>%
+  left_join(juv_susp_colocated_facilities, by = "FACILITYID") %>%
+  left_join(juv_known_colocated_facilities, by = "FACILITYID") %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  group_by(TYPE) %>%
+  summarize(Presumptive_Yes = sum(SUSP_COLOCATED, na.rm = TRUE),
+            Presumptive_No = n() - Presumptive_Yes,
+            Known_Yes = sum(KNOWN_COLOCATED, na.rm = TRUE),
+            Known_No = n() - Known_Yes) %>%
+  ungroup() %>%
+  mutate(TYPE = fct_reorder(TYPE, Presumptive_Yes, .fun='max')) %>%
+  pivot_longer(Presumptive_Yes:Known_No,
+               names_to = "DATA_SOURCE",
+               values_to = "COUNT") %>%
+  separate(DATA_SOURCE, 
+           into = c("DATA_SOURCE", "COLOCATED"), 
+           sep = "_") %>%
+  mutate(DATA_SOURCE = case_when(DATA_SOURCE == "Presumptive" ~ "Co-Located with Presumptive PFAS Source",
+                                 TRUE ~ "Co-Located with Known PFAS Source")) %>%
+  ggplot(aes(x = TYPE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  facet_wrap(~DATA_SOURCE) +
+  theme_minimal() +
+  labs(title = "Juvenile Carceral Facilities Co-Located with At Least One PFAS Contamination Source", x = "Facility Type", y = "Count of Carceral Facilities", fill = "Co-Located?") +
+  theme(legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/counts_susp_juv_type_comb.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+
+```
+
+### Plot Counts of Carceral Facilities in Proximity to Point Source by State and Type
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>%
+  select(FACILITYID, POPULATION, STATE, TYPE) %>%
+  distinct() %>%
+  group_by(STATE, TYPE) %>%
+  summarize(Count = n()) %>%
+  ungroup() %>%
+  mutate(STATE = fct_reorder(STATE, Count, .fun = 'sum'),
+         TYPE = str_to_title(TYPE)) %>%
+  ggplot(aes(x = STATE, y = Count, fill = TYPE)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Carceral Facilities Co-Located with At Least One Presumptive PFAS Contamination Source by State", 
+       x = "Carceral Facility State", 
+       y = "Carceral Facilties Co-located with PFAS Contamination Source",
+       fill = "Facilty Type")
+
+ggsave("final_datasets/susp_fac_by_state_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 2500,
+  units = "px",
+  dpi = 300,
+)
+```
+#### Known
+
+```{r}
+pb_pfas_joined %>%
+  select(FACILITYID, POPULATION, STATE, TYPE) %>%
+  distinct() %>%
+  group_by(STATE, TYPE) %>%
+  summarize(Count = n()) %>%
+  ungroup() %>%
+  mutate(STATE = fct_reorder(STATE, Count, .fun = 'sum'),
+         TYPE = str_to_title(TYPE)) %>%
+  ggplot(aes(x = STATE, y = Count, fill = TYPE)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Carceral Facilities Co-Located with At Least One Known PFAS Contamination Source by State", 
+       x = "Carceral Facility State", 
+       y = "Carceral Facilties Co-located with PFAS Contamination Source",
+       fill = "Facilty Type")
+
+ggsave("final_datasets/susp_fac_by_state_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 2000,
+  units = "px",
+  dpi = 300,
+)
 ```
 
 

@@ -68,7 +68,7 @@ null_distribution %>%
 
 ## z-score Test
 
-Specifically, we determined the proportions of carcerally proximate PFAS sites that were industrial sources (versus non-industrial) from the corpus of known sites and the corpus of presumptive sites; we used a two-proportion z-test to determine whether there was a statistically significant difference in proportions across the two data sources. 
+Purpose: We are trying to determine whether certain types of PFAS sites that are proximate to prisons are more likely to be be tested than other types of sites. Initial inquiry suggests that there are many more industrial sites with presumptive PFAS than known PFAS. We first determined the proportions of carcerally proximate PFAS sites that were industrial sources (versus non-industrial) from the corpus of known sites and from the corpus of presumptive sites. We are aiming to determine whether there is a statistically significant difference in proportions across the two data sources. 
 
 ```{r}
 counts_ind_known <- pb_pfas_joined |> 

@@ -5,18 +5,22 @@ editor_options:
   chunk_output_type: inline
 ---
 
+```{r}
+library(tidyverse)
+library(infer)
+
+colocated_by_facility <- read.csv("final_datasets/colocated_by_facility.csv")
+pb_pfas_joined <- read.csv("final_datasets/pb_pfas_joined.csv")
+pb_susp_cont_joined <- read.csv("final_datasets/pb_susp_cont_joined.csv")
+```
+
+# Permutation Test 
+
 Problem: We are determining how many carceral facilities in the US are in the same watershed boundary and at a lower elevation than a PFAS point source. We have been checking this first for known PFAS point sources and then again for suspected PFAS point sources (of which there are many many more). There are many facilities for which there is a suspected point source in proximity and not a known source. We suspect that, given the lack of testing in certain locations, juvenile facilities are more likely to be in watershed boundaries where there is a suspected but not known point source, when compared to adult facilities. 
 
 Null hypothesis: Whether a facility is juvenile or adult makes no difference, when it comes to the difference in proximity to known vs suspected sources. 
 
 ```{r}
-library(tidyverse)
-library(infer)
-
-colocated_by_facility <- read.csv("BASE_DATA.csv")
-pb_pfas_joined <- read.csv("final_datasets/pb_pfas_joined.csv")
-pb_susp_cont_joined <- read.csv("final_datasets/pb_susp_cont_joined.csv")
-
 colocated_by_facility <- colocated_by_facility |>
   mutate(DIFF2 = case_when(
     SUSP == TRUE & KNOWN == FALSE ~ TRUE, 
@@ -35,7 +39,7 @@ ggplot(colocated_by_facility, aes(x = JUVENILE, fill = DIFF2)) +
 
 ```
 
-# Generate null distribution for difference in proportions
+## Generate null distribution for difference in proportions
 
 ```{r}
 null_distribution <- colocated_by_facility %>% 
@@ -45,7 +49,7 @@ null_distribution <- colocated_by_facility %>%
   calculate(stat = "diff in props", order = c("JUVENILE", "NOT_JUVENILE"))
 ```
 
-# Generate observed difference in proportions
+## Generate observed difference in proportions
 
 ```{r}
 obs_diff_prop <- colocated_by_facility %>% 
@@ -56,7 +60,7 @@ obs_diff_prop <- colocated_by_facility %>%
 obs_diff_prop
 ```
 
-# Visualize distribution and get p-value
+## Visualize distribution and get p-value
 
 ```{r}
 visualize(null_distribution, bins = 10) + 
@@ -66,7 +70,7 @@ null_distribution %>%
   get_p_value(obs_stat = obs_diff_prop, direction = "right")
 ```
 
-## z-score Test
+# z-score Test
 
 Purpose: We are trying to determine whether certain types of PFAS sites that are proximate to prisons are more likely to be be tested than other types of sites. Initial inquiry suggests that there are many more industrial sites with presumptive PFAS than known PFAS. We first determined the proportions of carcerally proximate PFAS sites that were industrial sources (versus non-industrial) from the corpus of known sites and from the corpus of presumptive sites. We are aiming to determine whether there is a statistically significant difference in proportions across the two data sources. 
 
@@ -110,10 +114,10 @@ total_susp <- counts_ind_susp |>
 
 ind_susp <- counts_ind_susp |>
   pull(IND)
-
-res <- prop.test(x = c(ind_susp, ind_known), n = c(total_susp, total_known))
 ```
 
+
+## Visualize Difference in Proportions
 
 ```{r}
 counts_ind_known |>
@@ -127,4 +131,12 @@ counts_ind_known |>
   geom_col(position = position_fill(reverse = TRUE))
   
 ```
+
+## Two-proportion z-test
+
+```{r}
+res <- prop.test(x = c(ind_susp, ind_known), n = c(total_susp, total_known))
+```
+
+
 

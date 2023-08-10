@@ -74,6 +74,8 @@ null_distribution %>%
 
 Purpose: We are trying to determine whether certain types of PFAS sites that are proximate to prisons are more likely to be be tested than other types of sites. Initial inquiry suggests that there are many more industrial sites with presumptive PFAS than known PFAS. We first determined the proportions of carcerally proximate PFAS sites that were industrial sources (versus non-industrial) from the corpus of known sites and from the corpus of presumptive sites. We are aiming to determine whether there is a statistically significant difference in proportions across the two data sources. 
 
+Issue: Can we assume independence of observations if it's likely the case that many carcerally proximate industrial PFAS sources tend to cluster around each other (i.e. spatial auto-correlation)? If not, how does this impact the results of this z-score test?
+
 ```{r}
 counts_ind_known <- pb_pfas_joined |> 
   mutate(IND = case_when(PFAS_INDUSTRY == "Industrial Facilities" ~ "IND",

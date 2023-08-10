@@ -1,0 +1,177 @@
+---
+title: "Nursing homes HUC Analysis"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+The purpose of the code presented in this document is to determine how many nursing homes have potential exposures to PFAS through proximity to potential PFAS points sources, and how many students are impacted. Towards this end, the code:
+
+1. Loads the .gpkg files created in HUC_analysis.Rmd
+2. Joins nursing homes data to data representing the locations of each potential point source based on a shared HUC-12 code
+3. Filters to nursing homes at a lower elevation than a potential point source as a proxy for hydrological flow direction
+4. Calculates the number of unique nursing homes in the same HUC-12 watershed boundary and at a lower elevation than each point source and a combination of point sources, along with the number of students potentially impacted
+
+
+## Load Packages
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(sf)
+library(rgeos)
+```
+
+## Load point sources with HUC-12 and elevations 
+
+All of these files were created in get_HUC_elevation.Rmd.
+
+```{r}
+nursing_homes_huc_elevation <- st_read("huc_elevation_datasets/nursing_homes_HUC_elevation.gpkg") %>%
+    mutate(POPULATION = na_if(TOT_RES, -999)) %>%
+  filter(STATUS != "CLOSED")
+
+susp_cont_huc_elevation <- st_read("huc_elevation_datasets/susp_cont_HUC_elevation.gpkg") %>%
+  mutate(Source = case_when(Source == "Formerly Used Defense Sites" |
+                     Source == "Military Installations, Ranges, and Training Areas" ~ "Military Installment",
+                   TRUE ~ Source))
+
+pfas_huc_elevation <- st_read("huc_elevation_datasets/pfas_huc_elevation.gpkg") %>%
+  mutate(industry = case_when(
+    industry == "Military" ~ "Military Installment",
+    industry == "Landfill" ~ "Industrial Facilities",
+    industry == "Industry" ~ "Industrial Facilities",
+    industry == "Fire Department/Training Facility" ~ "Industrial Facilities",
+    industry == "Airport" ~ "Major Airports (FAA Part 139)",
+    industry == "Unknown" ~ "Other",
+    industry == "WWTP" ~ "Wastewater Treatment Plants",
+    industry == "Superfund Site" ~ "Industrial Facilities",
+    industry == "Dry Cleaner" ~ "Industrial Facilities",
+    industry == "Waste" ~ "Waste",
+    industry == "Other" ~ "Other"
+  )) 
+```
+
+## How many nursing homes are missing population data? Are certain types have more missing information than others?
+
+```{r}
+missing_pop <-
+  nursing_homes_huc_elevation %>%
+  st_drop_geometry() %>%
+  mutate(MISSING_POPULATION = case_when(is.na(POPULATION) ~ 1,
+                             TRUE ~ 0)) %>%
+  summarize(Total = n(),
+            Count_Missing_Pop = sum(MISSING_POPULATION), 
+            Percent_Missing_Pop = Count_Missing_Pop/n()*100)
+  
+```
+
+## Presumptive and Known Point Source Analysis
+
+### Join Presumptive Point Sources to nursing homes with Shared HUC-12
+
+This code will perform an inner join to link nursing homes with PFAS point sources that share the same HUC-12 watershed boundary. It will filter to nursing homes at a lower elevation than point sources.
+
+It will result in a data frame that can be used to calculate the total nursing homes in the same HUC-12 watershed boundary and at a lower elevation than a PFAS point source. Note that at this point there may be duplicate nursing homes in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the school.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+nursing_home_susp_cont_joined <-
+  nursing_homes_huc_elevation %>%
+  select(-elev_units) %>%
+  rename(ELEVATION_NURSING_HOME = elevation,
+         INDEX_SCHOOL = Index) %>%
+  st_set_geometry(NULL) %>%
+  inner_join(susp_cont_huc_elevation %>% 
+                 st_set_geometry(NULL), 
+               by = "HUC") %>%
+  filter(ELEVATION_NURSING_HOME < elevation) %>%
+  rename(SUSP_CONT_ID_COLUMN = Index,
+         SUSP_CONT_SOURCE = Source,
+         SUSP_CONT_DETAILS = Details) %>% 
+  select(ID, POPULATION, STATE, SUSP_CONT_SOURCE, SUSP_CONT_DETAILS, SUSP_CONT_ID_COLUMN, SUSP_CONT_ID_COLUMN)
+
+```
+
+### Join Known Point Sources to nursing homes with Shared HUC-12
+
+```{r}
+nursing_home_pfas_joined <-
+  nursing_homes_huc_elevation %>%
+  select(-elev_units) %>%
+  rename(ELEVATION_NURSING_HOME = elevation,
+         INDEX_NURSING_HOME = Index) %>%
+  st_set_geometry(NULL) %>%
+  inner_join(pfas_huc_elevation %>% 
+                 st_set_geometry(NULL), 
+               by = "HUC") %>%
+    filter(ELEVATION_NURSING_HOME < elevation) %>%
+    rename(PFAS_ID_COLUMN = map_id,
+           PFAS_NAME = site_name,
+           PFAS_INDUSTRY = industry,
+           PFAS_SOURCE = suspected_source,
+           PFAS_STATE = state,
+           PFAS_LEVEL = pfas_level) %>% 
+    select(ID, NAME, POPULATION, STATE, PFAS_ID_COLUMN, PFAS_NAME, PFAS_INDUSTRY, PFAS_SOURCE, PFAS_LEVEL)
+
+```
+
+### Calculate Numbers and Percentages of nursing homes in Proximity to Different Thresholds of Point Sources
+
+Purpose: 
+
+This code calculates the number, percentage, and populations of nursing homes in the same HUC-12 and at a lower elevation than each point source. The previous code produced a data frame in which a school may have been listed multiple times if there was more than one point source in the same HUC-12 and at a higher elevation. This code reduces the file to unique nursing homes by grouping variables specific to the facility. It then counts the number of observations in the data frame, the percentage of the total nursing homes in the US this number represents, and the number of student potentially impacted. Specifically, it
+
+* groups rows representing the same school, 
+* filters to groups in which the number of observations (in this case representing proximate point sources) is greater than the threshold, 
+* selects variables related to nursing homes and subsets to distinct nursing homes
+
+After this, the same calculations are performed as those performed above.
+
+```{r}
+point_source_calculation <- function(source, threshold, text) {
+  source %>%
+  group_by(ID) %>%
+  filter(n() > threshold) %>%
+  ungroup() %>%
+  select(ID, POPULATION) %>%
+  distinct() %>%
+  summarize(NURSING_HOME_WITH_POINT_SOURCE_IN_HUC = n(),
+            PERC_NURSING_HOME_WITH_POINT_SOURCE_IN_HUC = n() / nrow(nursing_homes_huc_elevation) * 100, 
+            AT_LEAST_NURSING_HOME_WITH_POINT_SOURCE_IN_HUC = sum(POPULATION, na.rm = TRUE)) %>%
+  mutate(SUSP_CONT_SOURCE = paste("More than", threshold, text, "point sources" )) %>%
+  relocate(SUSP_CONT_SOURCE, .before = NURSING_HOME_WITH_POINT_SOURCE_IN_HUC)
+}
+
+at_least_one_susp_source <- point_source_calculation(nursing_home_susp_cont_joined, 0, "presumptive")
+more_than_one_susp_source <- point_source_calculation(nursing_home_susp_cont_joined, 1, "presumptive")
+more_than_five_susp_source <- point_source_calculation(nursing_home_susp_cont_joined, 5, "presumptive")
+at_least_one_known_source <- point_source_calculation(nursing_home_pfas_joined, 0, "known")
+more_than_one_known_source <- point_source_calculation(nursing_home_pfas_joined, 1, "known")
+more_than_five_known_source <- point_source_calculation(nursing_home_pfas_joined, 5, "known")
+
+totals_table <- 
+  rbind(at_least_one_susp_source, 
+        more_than_one_susp_source, 
+        more_than_five_susp_source,
+        at_least_one_known_source, 
+        more_than_one_known_source, 
+        more_than_five_known_source)
+
+write.csv(totals_table, "final_datasets/totals_table_nursing_homes.csv")
+
+rm(at_least_one_susp_source,
+   more_than_one_susp_source,
+   more_than_five_susp_source,
+   at_least_one_known_source, 
+   more_than_one_known_source, 
+   more_than_five_known_source
+)
+```
+
+
+
+
+
+
+
+
+

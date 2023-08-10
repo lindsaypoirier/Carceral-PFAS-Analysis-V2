@@ -24,9 +24,21 @@ library(sf)
 library(rgeos)
 library(readxl)
 library(elevatr)
+library(tigris)
 ```
 
 ## Load Source Datasets
+
+### Census Block Urban Areas
+
+```{r}
+ua <- read.delim("https://www2.census.gov/geo/docs/reference/ua/2020_UA_BLOCKS.txt",
+                 header = TRUE, 
+                 sep = "|") %>%
+  select(GEOID) %>%
+  mutate(URBAN = 1)
+```
+
 
 ### Carceral Facilities
 
@@ -37,15 +49,64 @@ pb_sf <- st_read("source_datasets/Prison_Boundaries-shp/Prison_Boundaries.shp") 
   st_transform(crs = 4269) %>%
   st_transform(crs = 32617) %>% #convert to utm for calculating centroids
   st_centroid() %>% #centroids from original multipolygons
-  st_transform(crs = 4269) #back to 4269
+  st_transform(crs = 4269) %>% 
+  mutate(INDEX_CARCERAL = row_number())
 ```
+### Public Schools
+
+> Downloaded June 27, 2023
+
+```{r}
+schools_sf <- st_read("source_datasets/Public_Schools/PublicSchools.shp") %>%
+  st_transform(crs = 4269) %>%
+  st_transform(crs = 32617) %>% #convert to utm for calculating centroids
+  st_centroid() %>% #centroids from original multipolygons
+  st_transform(crs = 4269) %>% #back to 4269
+  mutate(Index = row_number())
+```
+
+### Nursing Homes
+
+```{r}
+nursing_homes_sf <- st_read("source_datasets/Nursing_Homes/Nursing_Homes.shp") %>%
+  st_transform(crs = 4269) %>%
+  st_transform(crs = 32617) %>% #convert to utm for calculating centroids
+  st_centroid() %>% #centroids from original multipolygons
+  st_transform(crs = 4269) %>% #back to 4269
+  mutate(Index = row_number())
+```
+### Hospitals
+
+```{r}
+hospital_sf <- st_read("source_datasets/Hospitals/Hospitals.shp") %>%
+  st_transform(crs = 4269) %>%
+  st_transform(crs = 32617) %>% #convert to utm for calculating centroids
+  st_centroid() %>% #centroids from original multipolygons
+  st_transform(crs = 4269) %>% #back to 4269
+  mutate(Index = row_number()) 
+```
+
+### Suspected Contamination
 
 ```{r}
 susp_cont <- read_csv("source_datasets/suspected_contamination_220712.csv") %>%
   select(-1) %>%
   rename(Index = X) %>%
   st_as_sf(coords=c("Longitude","Latitude"), crs = 4326) %>%
-  st_transform(crs = 4269) #back to 4269
+  st_transform(crs = 4269) %>%
+  mutate(STATE = state.abb[match(State,state.name)]) %>%
+  mutate(REGION = case_when(
+    STATE %in% c("CA", "WA", "OR", "HI", "AK") ~ "PACIFIC",
+    STATE %in% c("AZ", "CO", "ID", "NM", "MT", "UT", "NV", "WY") ~ "MOUNTAIN",
+    STATE %in% c("IA", "KS", "MN", "MO", "NE","ND", "SD") ~ "WEST NORTH CENTRAL",
+    STATE %in% c("IN", "IL", "MI", "OH", "WI") ~ "EAST NORTH CENTRAL",
+    STATE %in% c("AR", "LA", "OK", "TX") ~ "WEST SOUTH CENTRAL",
+    STATE %in% c("AL", "KY", "MS", "TN") ~ "EAST SOUTH CENTRAL",
+    STATE %in% c("NJ", "NY", "PA") ~ "MID ATLANTIC",
+    STATE %in% c("MA", "CT", "RI", "VT", "NH", "ME") ~ "NEW ENGLAND",
+    STATE %in% c("DE", "DC", "GA", "MD", "NC", "SC", "VA", "WV", "FL") ~ "SOUTH ATLANTIC",
+    TRUE ~ "OUTLYING"
+    ))
 ```
 
 ### PFAS
@@ -89,16 +150,18 @@ pb_sf %>%
 > The HUC-12 Watershed Boundary Dataset is not included in the GitHub repo due to size (102992 rows). It can be accessed at [https://water.usgs.gov/GIS/huc.html](https://water.usgs.gov/GIS/huc.html)
 
 ```{r}
-wbd <- st_read("source_datasets/WBD_National_GDB/WBD_National_GDB.gdb/")
-check_validity <- st_is_valid(wbd)
+#wbd <- st_read("source_datasets/WBD_National_GDB/WBD_National_GDB.gdb/")
+#check_validity <- st_is_valid(wbd)
 
 #When we ran this analysis, ten points from the watershed boundary file had invalid geometry. We used functions from the sf package to make the geometries valid. 
 
-wbd_valid <- st_make_valid(wbd)
-rm(wbd)
+#wbd_valid <- st_make_valid(wbd)
+#rm(wbd)
 
-st_write(wbd_valid, "source_datasets/wbd_valid.gpkg")
+#st_write(wbd_valid, "source_datasets/wbd_valid.gpkg")
+wbd_valid <- st_read("source_datasets/wbd_valid.gpkg")
 ```
+
 
 For each point source, we first determined where point locations intersected with watershed boundaries. We added the corresponding HUC-12 code to the point source data. Then, using the elevatr package (which streamlines access to the USGS Elevation Point Query Service API), we determined the elevations for each facility. 
 
@@ -114,9 +177,185 @@ huc_pb_sf <- pb_sf %>%
 
 elevation_pb <- get_elev_point(huc_pb_sf, prj = 4269, src = "epqs")
 
-st_write(elevation_pb, "huc_elevation_datasets/pb_HUC_elevation.gpkg")
-rm(pb_sf, intersected_pb_wbd, huc_pb_sf)
+elevation_pb_lat_long <- 
+  elevation_pb %>% 
+  mutate(LONGITUDE = unlist(map(elevation_pb$geom,1)),
+         LATITUDE = unlist(map(elevation_pb$geom,2)))
+
+get_census <- function(row_num) {
+
+  print(paste("Getting census info for row", row_num))
+  elevation_pb_lat_long %>%
+    slice(row_num) %>% 
+    mutate(GEOID = call_geolocator_latlon(LATITUDE, LONGITUDE))
+}
+
+block_pb <-  
+  map_dfr(1:nrow(elevation_pb_lat_long), get_census)
+
+block_pb <-
+  block_pb %>%
+  mutate(GEOID = as.numeric(GEOID)) %>%
+  left_join(ua, by = "GEOID") %>%
+  mutate(URBAN = case_when(URBAN == 1 ~ 1, 
+                           TRUE ~ 0))
+#st_write(elevation_pb, "huc_elevation_datasets/pb_HUC_elevation.gpkg")
+st_write(block_pb, "huc_elevation_datasets/pb_HUC_elevation_block.gpkg")
+
+#rm(pb_sf, intersected_pb_wbd, huc_pb_sf)
 ```
+
+### Get HUC and Elevation for Schools
+
+```{r}
+intersected_schools_wbd <- st_intersects(schools_sf, wbd_valid)
+
+huc_schools_sf <- schools_sf %>%
+  mutate(intersection = as.integer(intersected_schools_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+#Elevation API requests are handled in chunks to avoid timeouts.
+
+get_elev <- function(data){
+  
+  row_num <- data %>% 
+    st_drop_geometry() %>%
+    slice(1) %>% 
+    select(Index) %>% 
+    pull()
+  
+  print(paste("Collecting elevation for data starting at row", row_num))
+  
+  elevation_schools_x <- 
+    get_elev_point(data, 
+                   prj = 4269, 
+                   src = "epqs")
+  #st_write(elevation_schools_x, paste0("huc_elevation_datasets/schools_HUC_elevation", row_num, ".gpkg"))
+}
+
+n <-  5000 
+
+huc_schools_sliced <- 
+  huc_schools_sf %>% 
+  group_by(row_number() %/% n) %>% 
+  group_map(~ .x)
+
+elevation_schools <- 
+  map_dfr(huc_schools_sliced, 
+          get_elev)
+
+st_write(elevation_schools, "huc_elevation_datasets/schools_HUC_elevation.gpkg")
+```
+
+### Get HUC and Elevation for Nursing Homes
+
+```{r}
+intersected_nursing_homes_wbd <- st_intersects(nursing_homes_sf, wbd_valid)
+
+huc_nursing_homes_sf <- nursing_homes_sf %>%
+  mutate(intersection = as.integer(intersected_nursing_homes_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+get_elev <- function(data){
+  
+  row_num <- data %>% 
+    st_drop_geometry() %>%
+    slice(1) %>% 
+    select(Index) %>% 
+    pull()
+  
+  print(paste("Collecting elevation for data starting at row", row_num))
+  
+  elevation_nursing_homes_x <- 
+    get_elev_point(data, 
+                   prj = 4269, 
+                   src = "epqs")
+  st_write(elevation_nursing_homes_x, paste0("huc_elevation_datasets/nursing_homes_HUC_elevation", row_num, ".gpkg"))
+}
+
+n <-  3000 
+
+huc_nursing_homes_sliced <- 
+  huc_nursing_homes_sf %>% 
+  group_by(row_number() %/% n) %>% 
+  group_map(~ .x)
+
+elevation_nursing_homes <- 
+  map_dfr(huc_nursing_homes_sliced, 
+          get_elev)
+
+st_write(elevation_nursing_homes, "huc_elevation_datasets/nursing_homes_HUC_elevation.gpkg")
+rm(nursing_homes_sf, intersected_nursing_homes_wbd, huc_nursing_homes_sf)
+```
+
+### Get HUC and Elevation for Hospitals
+
+```{r}
+intersected_hospital_wbd <- st_intersects(hospital_sf, wbd_valid)
+
+huc_hospital_sf <- hospital_sf %>%
+  mutate(intersection = as.integer(intersected_hospital_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+get_elev <- function(data){
+  
+  row_num <- data %>% 
+    st_drop_geometry() %>%
+    slice(1) %>% 
+    select(Index) %>% 
+    pull()
+  
+  print(paste("Collecting elevation for data starting at row", row_num))
+  
+  elevation_hospital_x <- 
+    get_elev_point(data, 
+                   prj = 4269, 
+                   src = "epqs")
+  #st_write(elevation_hopital_x, paste0("huc_elevation_datasets/nursing_homes_HUC_elevation", row_num, ".gpkg"))
+}
+
+n <-  3000 
+
+huc_hospital_sliced <- 
+  huc_hospital_sf %>% 
+  group_by(row_number() %/% n) %>% 
+  group_map(~ .x)
+
+elevation_hospital <- 
+  map_dfr(huc_hospital_sliced, 
+          get_elev)
+
+elevation_hospital_lat_long <- 
+  elevation_hospital %>% 
+  mutate(LONGITUDE = unlist(map(elevation_hospital$geom,1)),
+         LATITUDE = unlist(map(elevation_hospital$geom,2)))
+
+get_census <- function(row_num) {
+
+  print(paste("Getting census info for row", row_num))
+  elevation_hospital_lat_long %>%
+    slice(row_num) %>% 
+    mutate(GEOID = call_geolocator_latlon(LATITUDE, LONGITUDE))
+}
+
+block_hospital <-  
+  map_dfr(1:nrow(elevation_hospital_lat_long), get_census)
+
+block_hospital <-
+  block_hospital %>%
+  mutate(GEOID = as.numeric(GEOID)) %>%
+  left_join(ua, by = "GEOID") %>%
+  mutate(URBAN = case_when(URBAN == 1 ~ "URBAN", 
+                           TRUE ~ "RURAL")) 
+
+#st_write(elevation_hospital, "huc_elevation_datasets/hospital_HUC_elevation.gpkg")
+st_write(block_hospital, "huc_elevation_datasets/hospital_HUC_elevation_block.gpkg")
+rm(hospital_sf, intersected_hospital_wbd, huc_hospital_sf)
+```
+
 ### Get HUC and Elevation for Suspected Sites
 
 ```{r}

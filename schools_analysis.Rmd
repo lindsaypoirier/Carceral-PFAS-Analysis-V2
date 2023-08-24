@@ -7,7 +7,7 @@ editor_options:
 
 The purpose of the code presented in this document is to determine how many schools have potential exposures to PFAS through proximity to potential PFAS points sources, and how many students are impacted. Towards this end, the code:
 
-1. Loads the .gpkg files created in HUC_analysis.Rmd
+1. Loads the .gpkg files created in `get_HUC_elevation.Rmd`
 2. Joins schools data to data representing the locations of each potential point source based on a shared HUC-12 code
 3. Filters to schools at a lower elevation than a potential point source as a proxy for hydrological flow direction
 4. Calculates the number of unique schools in the same HUC-12 watershed boundary and at a lower elevation than each point source and a combination of point sources, along with the number of students potentially impacted
@@ -23,7 +23,7 @@ library(rgeos)
 
 ## Load point sources with HUC-12 and elevations 
 
-All of these files were created in get_HUC_elevation.Rmd.
+All of these files were created in `get_HUC_elevation.Rmd`.
 
 ```{r}
 schools_huc_elevation <- st_read("huc_elevation_datasets/schools_HUC_elevation.gpkg") %>%

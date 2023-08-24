@@ -12,9 +12,10 @@ The purpose of the code presented in this document is to compose the final datas
 1. Loads source datasets and transforms them to a common CRS (4269)
 2. Determines which watershed boundary (HUC-12) each facility in the source datasets geo-spatially intersect with
 3. Determines the elevation of each facility in the source datasets via the USGS Elevation Point Query Service
-4. Saves all new datasets as .gpkg files for use in HUC_analysis.Rmd
+4. Gets the census block for each carceral facility and classifies the census block as urban or rural
+5. Saves all new datasets as .gpkg files for use in `carceral_analysis.Rmd`, `hospitals_analysis.Rmd`, `nursing_homes_analysis.Rmd`, and `schools_analysis.Rmd`
 
-> Notes: New files are saved often throughout the code to prevent having to re-execute computationally heavy areas should RStudio get hung up. All files that are unnecessary for HUC_analysis.Rmd are unlinked eventually. 
+> Notes: New files are saved often throughout the code to prevent having to re-execute computationally heavy areas should RStudio get hung up. All files that are unnecessary for `carceral_analysis.Rmd` are unlinked eventually. 
 
 ## Load Packages
 
@@ -67,6 +68,8 @@ schools_sf <- st_read("source_datasets/Public_Schools/PublicSchools.shp") %>%
 
 ### Nursing Homes
 
+> Downloaded June 27, 2023
+
 ```{r}
 nursing_homes_sf <- st_read("source_datasets/Nursing_Homes/Nursing_Homes.shp") %>%
   st_transform(crs = 4269) %>%
@@ -77,6 +80,8 @@ nursing_homes_sf <- st_read("source_datasets/Nursing_Homes/Nursing_Homes.shp") %
 ```
 ### Hospitals
 
+> Downloaded June 27, 2023
+
 ```{r}
 hospital_sf <- st_read("source_datasets/Hospitals/Hospitals.shp") %>%
   st_transform(crs = 4269) %>%
@@ -86,7 +91,9 @@ hospital_sf <- st_read("source_datasets/Hospitals/Hospitals.shp") %>%
   mutate(Index = row_number()) 
 ```
 
-### Suspected Contamination
+### Presumptive PFAS Contamination
+
+> Salvatore D, Mok K, Garrett KK, et al. Presumptive Contamination: A New Approach to PFAS Contamination Based on Likely Sources. Environ Sci Technol Lett. 2022;9(11):983-990. doi:10.1021/acs.estlett.2c00502
 
 ```{r}
 susp_cont <- read_csv("source_datasets/suspected_contamination_220712.csv") %>%
@@ -109,7 +116,9 @@ susp_cont <- read_csv("source_datasets/suspected_contamination_220712.csv") %>%
     ))
 ```
 
-### PFAS
+### Known PFAS Contamination
+
+> PFAS Project Lab. PFAS Contamination Site Tracker. Published June 2022. Accessed August 11, 2022. https://pfasproject.com/pfas-sites-and-community-resources/
 
 ```{r}
 pfas_sf <- read.csv("source_datasets/pfas.csv")  %>%
@@ -117,6 +126,20 @@ pfas_sf <- read.csv("source_datasets/pfas.csv")  %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326, na.fail = FALSE) %>%
   st_transform(4269)
 ```
+
+### TRI
+
+> Downloaded August 24, 2023
+> This is the preliminary 2022 TRI data file, last updated August 16, 2023. The EPA estimates that this file is 99% complete. However, during the months of August and September, they will update the dataset based on late submissions and revisions to the data. 
+
+```{r}
+tri_sf <- read.csv("source_datasets/tri_2022_us.csv") |>
+  filter(X45..PFAS == "YES") |>
+  select(X3..FRS.ID, X4..FACILITY.NAME, X12..LATITUDE, X13..LONGITUDE) |>
+  distinct() %>%
+  st_as_sf(coords = c("X13..LONGITUDE", "X12..LATITUDE"), crs = 4269, na.fail = FALSE)
+```
+
 
 ## Summaries of facility totals
 
@@ -356,7 +379,7 @@ st_write(block_hospital, "huc_elevation_datasets/hospital_HUC_elevation_block.gp
 rm(hospital_sf, intersected_hospital_wbd, huc_hospital_sf)
 ```
 
-### Get HUC and Elevation for Suspected Sites
+### Get HUC and Elevation for Presumptive PFAS Sites
 
 ```{r}
 intersected_susp_cont_wbd <- 
@@ -401,7 +424,8 @@ st_write(elevation_susp_cont, "huc_elevation_datasets/susp_cont_HUC_elevation.gp
 
 rm(susp_cont, intersected_susp_cont_wbd, huc_susp_cont_sf_sliced, huc_susp_cont_sf)
 ```
-### Get HUC and Elevation for PFAS Sites
+
+### Get HUC and Elevation for Known PFAS Sites
 
 ```{r}
 intersected_pfas_wbd <- st_intersects(pfas_sf, wbd_valid)
@@ -415,4 +439,20 @@ elevation_pfas <- get_elev_point(huc_pfas_sf, prj = 4269, src = "epqs")
 
 st_write(elevation_pfas, "huc_elevation_datasets/pfas_HUC_elevation.gpkg")
 rm(pfas_sf, intersected_pfas_wbd, huc_pfas_sf)
+```
+
+### Get HUC and Elevation for TRI Sites
+
+```{r}
+intersected_tri_wbd <- st_intersects(tri_sf, wbd_valid)
+
+huc_tri_sf <- tri_sf %>%
+  mutate(intersection = as.integer(intersected_tri_wbd),
+         HUC = if_else(is.na(intersection), "",
+                        wbd_valid$huc12[intersection]))
+
+elevation_tri <- get_elev_point(huc_tri_sf, prj = 4269, src = "epqs")
+
+st_write(elevation_tri, "huc_elevation_datasets/tri_HUC_elevation.gpkg")
+rm(tri_sf, intersected_tri_wbd, huc_tri_sf)
 ```

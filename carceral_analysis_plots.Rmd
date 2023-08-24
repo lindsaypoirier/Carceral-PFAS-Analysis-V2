@@ -1,0 +1,800 @@
+---
+title: "HUC Plots"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+## Load Packages
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(sf)
+library(rgeos)
+library(cowplot)
+library(ggpattern)
+```
+
+## Load  data sources
+
+All of these files were created in HUC_analysis.Rmd.
+
+```{r}
+pb_susp_cont_joined <- read.csv("final_datasets/pb_susp_cont_joined.csv")
+pb_pfas_joined <- read.csv("final_datasets/pb_pfas_joined.csv")
+pb_huc_elevation <- read.csv("final_datasets/pb_huc_elevation.csv")
+facility_type_totals <- read.csv("final_datasets/facility_type_totals.csv")
+```
+
+## Summary Tables
+
+```{r}
+susp_colocated_facilities <-
+  pb_susp_cont_joined %>% 
+  group_by(FACILITYID) %>%
+  summarize(SUSP_COLOCATED = "Yes",
+            NUM_SUSP_COLOCATED = n()) %>%
+  ungroup() %>%
+  mutate(SUSP_MORE_1_COLOCATED = case_when(NUM_SUSP_COLOCATED > 1 ~ "Yes", 
+                                            TRUE ~ "No"),
+         SUSP_MORE_5_COLOCATED = case_when(NUM_SUSP_COLOCATED > 5 ~ "Yes", 
+                                            TRUE ~ "No")) %>%
+  select(FACILITYID, SUSP_COLOCATED, SUSP_MORE_1_COLOCATED, SUSP_MORE_5_COLOCATED)
+  
+known_colocated_facilities <-
+  pb_pfas_joined %>% 
+  group_by(FACILITYID) %>%
+  summarize(KNOWN_COLOCATED = "Yes",
+            NUM_KNOWN_COLOCATED = n()) %>%
+  ungroup() %>%
+  mutate(KNOWN_MORE_1_COLOCATED = case_when(NUM_KNOWN_COLOCATED > 1 ~ "Yes", 
+                                            TRUE ~ "No"),
+         KNOWN_MORE_5_COLOCATED = case_when(NUM_KNOWN_COLOCATED > 5 ~ "Yes", 
+                                            TRUE ~ "No")) %>%
+  select(FACILITYID, KNOWN_COLOCATED, KNOWN_MORE_1_COLOCATED, KNOWN_MORE_5_COLOCATED)
+         
+summary_colocation_counts <- pb_huc_elevation %>%
+  left_join(susp_colocated_facilities, by = "FACILITYID") %>%
+  left_join(known_colocated_facilities, by = "FACILITYID") %>%
+  pivot_longer(SUSP_COLOCATED:KNOWN_MORE_5_COLOCATED, 
+              names_to = "MEASURE",
+              values_to = "VALUE") %>%
+  mutate(VALUE = case_when(is.na(VALUE) ~ "No", TRUE ~ VALUE)) %>%
+  separate(MEASURE, into = c("DATA_SOURCE", "COLOCATED"), sep = "_", extra = "merge") %>%
+  mutate(DATA_SOURCE = case_when(DATA_SOURCE == "SUSP" ~ "Presumptive Source",
+                                 DATA_SOURCE == "KNOWN" ~ "Known Source")) %>%
+    mutate(COLOCATED = case_when(COLOCATED == "COLOCATED" ~ "Carceral facilities co-located with at least 1 source",
+                                 COLOCATED == "MORE_1_COLOCATED" ~ "Carceral facilities co-located with more than 1 source",
+                                 COLOCATED == "MORE_5_COLOCATED" ~ "Carceral facilities co-located with more than 5 sources"))
+
+susp_colocated_facilities_source <-
+  pb_susp_cont_joined %>% 
+  group_by(FACILITYID) %>%
+  summarize(SUSP_COLOCATED = "Yes",
+            SUSP_POINT_SOURCE = paste0(unique(SUSP_CONT_SOURCE), collapse = ";")) %>%
+  ungroup() %>%
+  mutate(SUSP_POINT_SOURCE = case_when(str_detect(SUSP_POINT_SOURCE, ";") ~ "Multiple",
+                            TRUE ~ SUSP_POINT_SOURCE)) %>%
+  select(FACILITYID, SUSP_COLOCATED, SUSP_POINT_SOURCE)
+  
+known_colocated_facilities_source <-
+  pb_pfas_joined  %>% 
+  group_by(FACILITYID) %>%
+  summarize(KNOWN_COLOCATED = "Yes",
+            KNOWN_POINT_SOURCE = paste0(unique(PFAS_INDUSTRY, collapse = ";"))) %>%
+  ungroup() %>%
+  mutate(KNOWN_POINT_SOURCE = case_when(str_detect(KNOWN_POINT_SOURCE, ";") ~ "Multiple",
+                            TRUE ~ KNOWN_POINT_SOURCE)) %>%
+  select(FACILITYID, KNOWN_COLOCATED, KNOWN_POINT_SOURCE)
+         
+
+summary_colocation_counts_source <- pb_huc_elevation %>%
+  mutate(JUVENILE = case_when(SECURELVL == "JUVENILE" ~ "Juvenile",
+                              TRUE ~ "Adult")) %>% 
+  left_join(susp_colocated_facilities_source, by = c("FACILITYID")) %>%
+  left_join(known_colocated_facilities_source, by = c("FACILITYID")) %>%
+  pivot_longer(SUSP_COLOCATED:KNOWN_POINT_SOURCE, 
+              names_to = "MEASURE",
+              values_to = "VALUE") %>%
+  mutate(VALUE = case_when(is.na(VALUE) ~ "No", TRUE ~ VALUE)) %>%
+  separate(MEASURE, into = c("DATA_SOURCE", "MEASURE"), sep = "_", extra = "merge") %>%
+  mutate(DATA_SOURCE = case_when(DATA_SOURCE == "SUSP" ~ "Presumptive Source",
+                                 DATA_SOURCE == "KNOWN" ~ "Known Source"))
+
+juv_susp_colocated_facilities <-
+  pb_susp_cont_joined %>% 
+  filter(SECURELVL == "JUVENILE") %>%
+  select(FACILITYID) %>%
+  distinct() %>%
+  mutate(SUSP_COLOCATED = 1)
+  
+juv_known_colocated_facilities <-
+  pb_pfas_joined %>% 
+  filter(SECURELVL == "JUVENILE") %>%
+  select(FACILITYID) %>%
+  distinct() %>%
+  mutate(KNOWN_COLOCATED = 1)
+```
+
+## Plots
+
+### Counts of Carceral Facilities in Proximity to Point Source
+
+```{r}
+summary_colocation_counts %>%
+ggplot(aes(x = DATA_SOURCE, fill = VALUE)) +
+  geom_bar() +
+  facet_wrap(vars(COLOCATED), nrow = 3) +
+  coord_flip() +
+  theme_minimal()  +
+  labs(title = "U.S. Carceral Facilities Co-Located with PFAS Contamination Sources", 
+       x = "", 
+       y = "", 
+       fill = "Co-located?") +
+  theme(legend.title = element_text(size = 8), 
+        legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4")) +
+  geom_text(data = summary_colocation_counts %>% filter(VALUE == "Yes"), 
+            aes(label = paste0(round(..count../nrow(pb_huc_elevation) * 100, 
+                                     digits = 1), "%")), 
+            stat = "count", 
+            colour = "black", 
+            size = 2, 
+            hjust = -0.15)
+
+ggsave("final_datasets/summary_plot.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 2600,
+  height = 1600,
+  units = "px",
+  dpi = 300,
+)
+
+rm(susp_colocated_facilities, known_colocated_facilities)
+```
+
+### Counts of Carceral Facilities in Proximity to Point Source, Elaborated
+
+```{r}
+a <- summary_colocation_counts_source %>%
+  filter(MEASURE == "COLOCATED") %>%
+ggplot(aes(x = DATA_SOURCE, fill = VALUE)) +
+  geom_bar() +
+  coord_flip() +
+  theme_minimal()  +
+  labs(title = "U.S. Carceral Facilities Co-Located with PFAS Contamination Sources", 
+       x = "", 
+       y = "", 
+       fill = "Co-located with PFAS Source?") +
+  theme(legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"),
+                    guide = guide_legend(reverse = TRUE)) +
+  geom_text(data = summary_colocation_counts_source %>% 
+              filter(VALUE == "Yes"), 
+            aes(label = paste0(round(..count../nrow(pb_huc_elevation) * 100, 
+                                     digits = 1), "%")), 
+            stat = "count", 
+            colour = "black", 
+            size = 3, 
+            hjust = -0.15)
+
+b <- summary_colocation_counts_source %>%
+  filter(MEASURE == "POINT_SOURCE" & VALUE != "No") %>%
+  group_by(DATA_SOURCE, VALUE) %>%
+  summarize(Count = n()) %>%
+  ggplot(aes(x = DATA_SOURCE,                   
+             y = Count)) +
+  geom_col_pattern(position = position_dodge(0.7),
+                   width = 0.7,
+                   pattern_size = 0.1,
+                   pattern_spacing = 0.03,
+                   pattern_fill = "grey40",
+                   pattern_color = "grey40",
+                   aes(fill = VALUE,
+                       pattern = VALUE,
+                       pattern_angle = VALUE)) +
+  theme_minimal()  +
+  labs(title = "U.S. Carceral Facilities Co-Located with PFAS Contamination Sources, by Source", 
+       x = "", 
+       y = "") +
+  ylim(0, 6118) +
+  theme(legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 8)) + 
+  scale_fill_discrete(name = "Source",
+                    guide = guide_legend(reverse = TRUE)) +
+  scale_pattern_angle_manual(name = "Source",
+                             values = c(45, 90, 0, 0, 0, 90, 0),
+                    guide = guide_legend(reverse = TRUE)) +
+  scale_pattern_manual(name = "Source",
+                       values = c('stripe', 'stripe', 'circle', 'wave', 'stripe', 'wave', 'weave'),
+                    guide = guide_legend(reverse = TRUE)) +
+  geom_text(aes(label = paste0(round(Count/nrow(pb_huc_elevation) * 100,
+                                     digits = 1), "%")),
+            position = position_dodge2(width = 0.7),
+            colour = "black", 
+            hjust = -0.15,
+            size = 3) +
+  coord_flip()
+
+c <- summary_colocation_counts_source %>%
+  filter(MEASURE == "COLOCATED" & VALUE != "No") %>%
+  group_by(DATA_SOURCE, JUVENILE) %>%
+  summarize(Count = n()) %>%
+  ggplot(aes(x = DATA_SOURCE,                   
+             y = Count)) +
+  geom_col_pattern(position = position_dodge(0.7),
+                   width = 0.7,
+                   pattern_spacing = 0.04,
+                   pattern_fill = "grey40",
+                   pattern_color = "grey40",
+                   pattern_size = 0.1,
+                   aes(fill = JUVENILE,
+                       pattern = JUVENILE)) +
+  theme_minimal()  +
+  labs(title = "U.S. Carceral Facilities Co-Located with PFAS Contamination Sources, by Juvenile", 
+       x = "", 
+       y = "") +
+  ylim(0, 6118) +
+  theme(legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 8)) + 
+  scale_fill_manual(name = "Juvenile?",
+                      values = c("#ED8141", "#85ad00"),
+                    guide = guide_legend(reverse = TRUE)) +
+  scale_pattern_manual(name = "Juvenile?",
+                       values = c('circle', 'weave'),
+                    guide = guide_legend(reverse = TRUE)) +
+  geom_text(aes(label = paste0(round(Count/nrow(pb_huc_elevation) * 100, 
+                                     digits = 1), "%")),
+            position = position_dodge2(width = 0.7),
+            colour = "black", 
+            hjust = -0.15,
+            size = 3) +
+  coord_flip()
+
+figure <- plot_grid(a, b, c,
+                   ncol = 1,
+                   nrow = 3,
+                   rel_heights = c (1, 2, 1.5),
+                   align = 'v',
+                   axis = 'lr')
+figure
+
+ggsave("final_datasets/colocated_facilities_summary_plot.png",
+  plot = figure,
+  scale = 1,
+  width = 3000,
+  height = 2200,
+  units = "px",
+  dpi = 300,
+)
+
+```
+
+
+### Counts of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  summarize(COUNT = n_distinct(FACILITYID)) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, COUNT)) %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = COUNT)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(x = "Presumptive Contamination Source", y = "Count of Carceral Facilities")
+
+ggsave("final_datasets/susp_fac_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 2600,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+#### Known
+
+```{r}
+pb_pfas_joined %>%
+  group_by(PFAS_INDUSTRY) %>%
+  summarize(Yes = n_distinct(FACILITYID),
+            No = nrow(pb_huc_elevation) - Yes) %>%
+  ungroup() %>%
+  mutate(PFAS_INDUSTRY = fct_reorder(PFAS_INDUSTRY, Yes)) %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = PFAS_INDUSTRY, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with At Least One Known PFAS Contamination Source", x = "PFAS Source", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/known_fac_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Percentages of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  summarize(Yes = n_distinct(FACILITYID),
+            No = nrow(pb_huc_elevation) - Yes) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, Yes)) %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(x = "Presumptive Contamination Source", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the Presumptive source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/per_susp_fac_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Populations of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION) %>%
+  distinct() %>%
+  summarize(POP = sum(POPULATION, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, POP)) %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = POP)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Populations Co-Located with Presumptive PFAS Contamination Sources", 
+       x = "Presumptive Contamination Source", 
+       y = "Carceral Population (low estimate)")
+
+ggsave("final_datasets/susp_pop_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 2600,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Population Percentages of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION) %>%
+  distinct() %>%
+  summarize(Yes = sum(POPULATION, na.rm = TRUE),
+            No = sum(pb_huc_elevation$POPULATION, na.rm = TRUE) - Yes) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, Yes)) %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "POP") %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = POP, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Populations Co-Located with Presumptive PFAS Contamination Sources", 
+       x = "Presumptive Contamination Source", 
+       y = "Carceral Population (low estimate)", 
+       fill = "Is carceral population co-located in HUC-12 at a lower elevation than the Presumptive source?") +
+  theme(legend.position = "bottom", 
+        legend.title = element_text(size = 8), 
+        legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/per_susp_pop_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Counts and Populations of Carceral Facilities in Proximity to Point Source by Source
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>% 
+  group_by(SUSP_CONT_SOURCE) %>%
+  select(FACILITYID, POPULATION) %>%
+  distinct() %>%
+  summarize(Yes_Count = n(),
+            No_Count = nrow(pb_huc_elevation) - Yes_Count,
+            Yes_Population = sum(POPULATION, na.rm = TRUE),
+            No_Population = sum(pb_huc_elevation$POPULATION, na.rm = TRUE) - Yes_Population) %>%
+  ungroup() %>%
+  mutate(SUSP_CONT_SOURCE = fct_reorder(SUSP_CONT_SOURCE, Yes_Count, .fun='max')) %>%
+  pivot_longer(Yes_Count:No_Population,
+    names_to = "COLOCATED",
+    values_to = "VALUE") %>%
+  separate(COLOCATED, 
+           into = c("COLOCATED", "MEASURE"),
+           sep = "_") %>%
+  filter(COLOCATED == "Yes") %>%
+  mutate(MEASURE = case_when(MEASURE == "Population" ~ "Carceral Population Co-located (low estimate)",
+                             TRUE ~ "Carceral Facilities Co-located")) %>%
+  ggplot(aes(x = SUSP_CONT_SOURCE, y = VALUE)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~MEASURE, scales = "free_x") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(x = "Presumptive Contamination Source", 
+       y = "")
+
+ggsave("final_datasets/susp_fac_pop_by_source.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Counts and Percentages of Carceral Facilities in Proximity to Point Source by Juvenile
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>% 
+  mutate(JUVENILE = case_when(SECURELVL == "JUVENILE" ~ "Juvenile",
+                              TRUE ~ "Adult"),
+         DENOM = case_when(SECURELVL == "JUVENILE" ~ 
+                             nrow(pb_huc_elevation %>% 
+                                    filter(SECURELVL == "JUVENILE")),
+                           TRUE ~ 
+                             nrow(pb_huc_elevation %>%
+                                    filter(SECURELVL != "JUVENILE")))) %>%
+  select(FACILITYID, JUVENILE, DENOM) %>%
+  distinct() %>%
+  group_by(JUVENILE) %>%
+  summarize(Yes = n(),
+            No = DENOM - n(),
+            Per = Yes/DENOM) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = JUVENILE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with At Least One Presumptive PFAS Contamination Source", x = "Juvenile Facility?", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/susp_fac_by_juv.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+#### Known
+
+```{r}
+pb_pfas_joined %>% 
+  mutate(JUVENILE = case_when(SECURELVL == "JUVENILE" ~ "Juvenile",
+                              TRUE ~ "Adult"),
+         DENOM = case_when(SECURELVL == "JUVENILE" ~ 
+                             nrow(pb_huc_elevation %>% 
+                                    filter(SECURELVL == "JUVENILE")),
+                           TRUE ~ 
+                             nrow(pb_huc_elevation %>%
+                                    filter(SECURELVL != "JUVENILE")))) %>%
+  select(FACILITYID, JUVENILE, DENOM) %>%
+  distinct() %>%
+  group_by(JUVENILE) %>%
+  summarize(Yes = n(),
+            No = DENOM - n(),
+            Per = Yes/DENOM) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  ggplot(aes(x = JUVENILE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with At Least One Known PFAS Contamination Source", x = "Juvenile Facility?", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/known_fac_by_juv.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+
+### Plot Counts and Populations of Carceral Facilities in Proximity to Point Source by Type and Juvenile
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>%
+  select(FACILITYID, POPULATION, TYPE) %>%
+  left_join(facility_type_totals, by = "TYPE") %>%
+  distinct() %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  group_by(TYPE) %>%
+  summarize(Yes_Count = n(), 
+            No_Count = TYPE_COUNT - n(),
+            Yes_Population = sum(POPULATION, na.rm = TRUE),
+            No_Population = POP_COUNT - Yes_Population) %>%
+  ungroup() %>%
+  distinct() %>%
+  mutate(TYPE = fct_reorder(TYPE, Yes_Count, .fun='max')) %>%
+  pivot_longer(Yes_Count:No_Population,
+               names_to = "MEASURE",
+               values_to = "VALUE") %>%
+  separate(MEASURE, into = c("CO_LOCATED", "MEASURE"), sep = "_") %>%
+  ggplot(aes(x = TYPE, y = VALUE, fill = CO_LOCATED)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~MEASURE, scales = "free_x") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Types of Carceral Facilities Co-Located with Presumptive PFAS Contamination Sources", 
+       x = "Facility Type", 
+       y = "Carceral Facilties Co-located with Presumptive Contamination Source",
+       fill = "Co-Located?") +
+  theme(legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/susp_fac_pop_by_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+
+```
+#### Known
+
+```{r}
+pb_pfas_joined %>%
+  select(FACILITYID, POPULATION, TYPE, SECURELVL) %>%
+  distinct() %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  group_by(TYPE) %>%
+  summarize(Count = n(), 
+            Population = sum(POPULATION, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(TYPE = fct_reorder(TYPE, Count)) %>%
+  pivot_longer(Count:Population,
+               names_to = "MEASURE",
+               values_to = "VALUE") %>%
+  ggplot(aes(x = TYPE, y = VALUE)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~MEASURE, scales = "free_x") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Types of Carceral Facilities Co-Located with Known PFAS Contamination Sources", 
+       x = "Facility Type", 
+       y = "Carceral Facilties Co-located with Known Contamination Source")
+
+ggsave("final_datasets/known_fac_pop_by_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Counts and Populations of Juvenile Carceral Facilities in Proximity to Point Source by Type
+
+```{r}
+pb_huc_elevation %>%
+  filter(SECURELVL == "JUVENILE") %>%
+  left_join(juv_susp_colocated_facilities, by = "FACILITYID") %>%
+  left_join(juv_known_colocated_facilities, by = "FACILITYID") %>%
+  mutate(TYPE = str_to_title(TYPE)) %>%
+  group_by(TYPE) %>%
+  summarize(Presumptive_Yes = sum(SUSP_COLOCATED, na.rm = TRUE),
+            Presumptive_No = n() - Presumptive_Yes,
+            Known_Yes = sum(KNOWN_COLOCATED, na.rm = TRUE),
+            Known_No = n() - Known_Yes) %>%
+  ungroup() %>%
+  mutate(TYPE = fct_reorder(TYPE, Presumptive_Yes, .fun='max')) %>%
+  pivot_longer(Presumptive_Yes:Known_No,
+               names_to = "DATA_SOURCE",
+               values_to = "COUNT") %>%
+  separate(DATA_SOURCE, 
+           into = c("DATA_SOURCE", "COLOCATED"), 
+           sep = "_") %>%
+  mutate(DATA_SOURCE = case_when(DATA_SOURCE == "Presumptive" ~ "Co-Located with Presumptive PFAS Source",
+                                 TRUE ~ "Co-Located with Known PFAS Source")) %>%
+  ggplot(aes(x = TYPE, y = COUNT, fill = COLOCATED)) +
+  geom_col() +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  facet_wrap(~DATA_SOURCE) +
+  theme_minimal() +
+  labs(x = "Facility Type", y = "Count of Carceral Facilities", fill = "Co-Located?") +
+  theme(legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4"))
+
+ggsave("final_datasets/counts_susp_juv_type_comb.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 1200,
+  units = "px",
+  dpi = 300,
+)
+
+```
+
+### Plot Counts of Carceral Facilities in Proximity to Point Source by State and Type
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>%
+  select(FACILITYID, POPULATION, STATE, TYPE) %>%
+  distinct() %>%
+  group_by(STATE, TYPE) %>%
+  summarize(Count = n()) %>%
+  ungroup() %>%
+  mutate(STATE = fct_reorder(STATE, Count, .fun = 'sum'),
+         TYPE = str_to_title(TYPE)) %>%
+  ggplot(aes(x = STATE, y = Count, fill = TYPE)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Carceral Facilities Co-Located with At Least One Presumptive PFAS Contamination Source by State", 
+       x = "Carceral Facility State", 
+       y = "Carceral Facilties Co-located with PFAS Contamination Source",
+       fill = "Facilty Type")
+
+ggsave("final_datasets/susp_fac_by_state_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 2500,
+  units = "px",
+  dpi = 300,
+)
+```
+
+#### Known
+
+```{r}
+pb_pfas_joined %>%
+  select(FACILITYID, POPULATION, STATE, TYPE) %>%
+  distinct() %>%
+  group_by(STATE, TYPE) %>%
+  summarize(Count = n()) %>%
+  ungroup() %>%
+  mutate(STATE = fct_reorder(STATE, Count, .fun = 'sum'),
+         TYPE = str_to_title(TYPE)) %>%
+  ggplot(aes(x = STATE, y = Count, fill = TYPE)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Carceral Facilities Co-Located with At Least One Known PFAS Contamination Source by State", 
+       x = "Carceral Facility State", 
+       y = "Carceral Facilties Co-located with PFAS Contamination Source",
+       fill = "Facilty Type")
+
+ggsave("final_datasets/susp_fac_by_state_type.png",
+  plot = last_plot(),
+  scale = 1,
+  width = 3000,
+  height = 2000,
+  units = "px",
+  dpi = 300,
+)
+```
+
+### Plot Counts and Percentages of Carceral Facilities in Proximity to Point Source by Urban
+
+#### Presumptive
+
+```{r}
+pb_susp_cont_joined %>% 
+  mutate(DENOM = case_when(URBAN == "URBAN" ~ 
+                             nrow(pb_huc_elevation %>% 
+                                    filter(URBAN == "URBAN")),
+                           TRUE ~ 
+                             nrow(pb_huc_elevation %>%
+                                    filter(URBAN != "URBAN")))) %>%
+  select(FACILITYID, URBAN, DENOM) %>%
+  distinct() %>%
+  group_by(URBAN) %>%
+  summarize(Yes = n(),
+            No = DENOM - n(), 
+            DENOM = DENOM) %>%
+  distinct() %>%
+  ungroup() %>%
+  pivot_longer(Yes:No,
+    names_to = "COLOCATED",
+    values_to = "COUNT") %>%
+  mutate(Per = COUNT/DENOM) %>%
+  ggplot(aes(x = URBAN, y = COUNT, group = COLOCATED)) +
+  geom_col(aes(fill = COLOCATED)) +
+  coord_flip() +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  labs(title = "Carceral Facilities Co-Located with At Least One Presumptive PFAS Contamination Source", x = "Urban?", y = "Count of Carceral Facilities", fill = "Is carceral facility co-located in HUC-12 at a lower elevation than the source?") +
+  theme(legend.position = "bottom", legend.title = element_text(size = 8), legend.text = element_text(size = 8)) + 
+  scale_fill_manual(values=c("#ececec", "#00bfc4")) +
+  geom_text(aes(label = round(Per, 2)),
+            colour = "black", 
+            size = 2,
+            position = position_stack(vjust = 0.5))
+
+
+```
+
+
+
+
+
+

@@ -1,0 +1,144 @@
+---
+title: "Statistical Tests"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+library(tidyverse)
+library(infer)
+
+colocated_by_facility <- read.csv("final_datasets/colocated_by_facility.csv")
+pb_pfas_joined <- read.csv("final_datasets/pb_pfas_joined.csv")
+pb_susp_cont_joined <- read.csv("final_datasets/pb_susp_cont_joined.csv")
+```
+
+# Permutation Test 
+
+Problem: We are determining how many carceral facilities in the US are in the same watershed boundary and at a lower elevation than a PFAS point source. We have been checking this first for known PFAS point sources and then again for suspected PFAS point sources (of which there are many many more). There are many facilities for which there is a suspected point source in proximity and not a known source. We suspect that, given the lack of testing in certain locations, juvenile facilities are more likely to be in watershed boundaries where there is a suspected but not known point source, when compared to adult facilities. 
+
+Null hypothesis: Whether a facility is juvenile or adult makes no difference, when it comes to the difference in proximity to known vs suspected sources. 
+
+```{r}
+colocated_by_facility <- colocated_by_facility |>
+  mutate(DIFF2 = case_when(
+    SUSP == TRUE & KNOWN == FALSE ~ TRUE, 
+    TRUE ~ FALSE
+  ))
+
+# In colocated_by_facility, DIFF represents whether there is a difference in known vs suspected sources. 
+
+# Visuals of difference in proportions
+colocated_by_facility %>% 
+  group_by(JUVENILE, DIFF2) %>% 
+  tally()
+
+ggplot(colocated_by_facility, aes(x = JUVENILE, fill = DIFF2)) +
+  geom_bar(position = "fill")
+
+```
+
+## Generate null distribution for difference in proportions
+
+```{r}
+null_distribution <- colocated_by_facility %>% 
+  specify(formula = DIFF2 ~ JUVENILE, success = "TRUE") %>% 
+  hypothesize(null = "independence") %>% 
+  generate(reps = 1000, type = "permute") %>% 
+  calculate(stat = "diff in props", order = c("JUVENILE", "NOT_JUVENILE"))
+```
+
+## Generate observed difference in proportions
+
+```{r}
+obs_diff_prop <- colocated_by_facility %>% 
+  specify(formula = DIFF2 ~ JUVENILE, 
+          success = "TRUE") %>% 
+  calculate(stat = "diff in props", 
+            order = c("JUVENILE", "NOT_JUVENILE"))
+obs_diff_prop
+```
+
+## Visualize distribution and get p-value
+
+```{r}
+visualize(null_distribution, bins = 10) + 
+  shade_p_value(obs_stat = obs_diff_prop, direction = "right")
+
+null_distribution %>% 
+  get_p_value(obs_stat = obs_diff_prop, direction = "right")
+```
+
+# z-score Test
+
+Purpose: We are trying to determine whether certain types of PFAS sites that are proximate to prisons are more likely to be be tested than other types of sites. Initial inquiry suggests that there are many more industrial sites with presumptive PFAS than known PFAS. We first determined the proportions of carcerally proximate PFAS sites that were industrial sources (versus non-industrial) from the corpus of known sites and from the corpus of presumptive sites. We are aiming to determine whether there is a statistically significant difference in proportions across the two data sources. 
+
+Note: We ran a separate test to assess whether spatial autocorrelation might impact the assumption that data were independent. Available upon request.
+
+```{r}
+counts_ind_known <- pb_pfas_joined |> 
+  mutate(IND = case_when(PFAS_INDUSTRY == "Industrial Facilities" ~ "IND",
+                         TRUE ~ "NOT_IND")) |>
+  group_by(IND) |>
+  summarize(COUNT = length(unique(PFAS_ID_COLUMN))) |>
+  ungroup() |>
+  pivot_wider(names_from = IND,
+              values_from = COUNT) 
+
+prop_ind_known <- counts_ind_known |>
+  mutate(p1 = IND/ (IND + NOT_IND)) |>
+  pull(p1)
+
+total_known <- counts_ind_known |>
+  mutate(n1 = IND + NOT_IND) |>
+  pull(n1)
+
+ind_known <- counts_ind_known |>
+  pull(IND)
+
+counts_ind_susp <- pb_susp_cont_joined |> 
+  mutate(IND = case_when(SUSP_CONT_SOURCE == "Industrial Facilities" ~ "IND",
+                         TRUE ~ "NOT_IND")) |>
+  group_by(IND) |>
+  summarize(COUNT = length(unique(SUSP_CONT_ID_COLUMN))) |>
+  ungroup() |>
+  pivot_wider(names_from = IND,
+              values_from = COUNT)
+
+ prop_ind_susp <- counts_ind_susp |>
+  mutate(p2 = IND/ (IND + NOT_IND)) |>
+  pull(p2)
+ 
+total_susp <- counts_ind_susp |>
+  mutate(n2 = IND + NOT_IND) |>
+  pull(n2)
+
+ind_susp <- counts_ind_susp |>
+  pull(IND)
+```
+
+
+## Visualize Difference in Proportions
+
+```{r}
+counts_ind_known |>
+  mutate(status = "Known") |>
+  rbind(counts_ind_susp |>
+  mutate(status = "Suspected") ) |>
+  pivot_longer(cols = c(IND, NOT_IND),
+               names_to = "type", 
+               values_to = "count") |>
+  ggplot(aes(x = status, y = count, fill = type)) +
+  geom_col(position = position_fill(reverse = TRUE))
+  
+```
+
+## Two-proportion z-test
+
+```{r}
+res <- prop.test(x = c(ind_susp, ind_known), n = c(total_susp, total_known))
+```
+
+
+

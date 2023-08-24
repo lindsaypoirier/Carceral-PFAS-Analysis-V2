@@ -41,3 +41,4 @@ vignettes/*.pdf
 
 /source_datasets/*
 /huc_elevation_datasets/*
+*.nb.html

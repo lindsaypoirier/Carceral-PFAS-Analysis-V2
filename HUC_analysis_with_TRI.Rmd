@@ -1,0 +1,107 @@
+---
+title: "HUC Analysis with TRI"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+
+This code determines which carceral facilities are co-located with industrial facilities that reported PFAS emissions to the TRI in 2022. It then identifies which of these carceral facilities were not co-located with any of the facilities listed in our known PFAS data source or our presumptive PFAS data source.
+
+## Load Packages
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(sf)
+library(rgeos)
+```
+
+## Load point sources with HUC-12 and elevations 
+
+All of these files were created in `get_HUC_elevation.Rmd`.
+
+```{r}
+pb_huc_elevation <- st_read("huc_elevation_datasets/pb_HUC_elevation_block.gpkg") %>%
+    mutate(POPULATION = na_if(POPULATION, -999)) %>%
+  filter(STATUS != "CLOSED")
+
+pb_huc_elevation_juv <- pb_huc_elevation %>%
+  filter(SECURELVL == "JUVENILE")
+
+susp_cont_huc_elevation <- st_read("huc_elevation_datasets/susp_cont_HUC_elevation.gpkg")
+
+pfas_huc_elevation <- st_read("huc_elevation_datasets/pfas_huc_elevation.gpkg")
+
+tri_huc_elevation <-
+  st_read("huc_elevation_datasets/tri_HUC_elevation.gpkg")
+
+```
+
+## Presumptive and Known Point Source Analysis
+
+### Join Presumptive Point Sources to Carceral Facilities with Shared HUC-12
+
+This code will perform an inner join to link carceral facilities with PFAS point sources that share the same HUC-12 watershed boundary. It will filter to carceral facilities at a lower elevation than point sources.
+
+It will result in a data frame that can be used to calculate the total carceral facilities in the same HUC-12 watershed boundary and at a lower elevation than a PFAS point source. Note that at this point there may be duplicate carceral facilities in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the carceral facility.
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+pb_susp_cont_joined <-
+  pb_huc_elevation %>%
+  select(-elev_units) %>%
+  rename(ELEVATION_CARCERAL = elevation) %>%
+  st_set_geometry(NULL) %>%
+  inner_join(susp_cont_huc_elevation %>% 
+                 st_set_geometry(NULL), 
+               by = "HUC") %>%
+    filter(ELEVATION_CARCERAL < elevation) %>%
+    select(FACILITYID, NAME) %>%
+  distinct()
+
+```
+
+### Join Known Point Sources to Carceral Facilities with Shared HUC-12
+
+```{r}
+pb_pfas_joined <-
+  pb_huc_elevation %>%
+  select(-elev_units) %>%
+  rename(ELEVATION_CARCERAL = elevation) %>%
+  st_set_geometry(NULL) %>%
+  inner_join(pfas_huc_elevation %>% 
+                 st_set_geometry(NULL), 
+               by = "HUC") %>%
+  filter(ELEVATION_CARCERAL < elevation) %>%
+  select(FACILITYID, NAME) %>%
+  distinct()
+
+```
+
+### Join TRI Sources to Carceral Facilities with Shared HUC-12
+
+This code will perform an inner join to link carceral facilities with TRI PFAS point sources that share the same HUC-12 watershed boundary. It will filter to carceral facilities at a lower elevation than point sources.
+
+It will result in a data frame that can be used to calculate the total carceral facilities in the same HUC-12 watershed boundary and at a lower elevation than a TRI PFAS point source. Note that at this point there may be duplicate carceral facilities in the data frame if there were multiple point sources in the same HUC-12 watershed boundary at a higher elevation than the carceral facility.
+
+```{r}
+pb_tri_joined <-
+  pb_huc_elevation %>%
+  select(-elev_units) %>%
+  rename(ELEVATION_CARCERAL = elevation) %>%
+  st_set_geometry(NULL) %>%
+  inner_join(tri_huc_elevation %>% 
+                 st_set_geometry(NULL), 
+               by = "HUC") %>%
+  filter(ELEVATION_CARCERAL < elevation) %>%
+  select(FACILITYID, NAME) %>%
+  distinct()
+
+```
+
+### Which facilities were co-located with TRI PFAS-emitting facilities and not the presumptive and known PFAS sources?
+
+```{r}
+pb_tri_joined %>% anti_join(pb_susp_cont_joined, by = "FACILITYID")
+
+pb_tri_joined %>% anti_join(pb_pfas_joined, by = "FACILITYID")
+```
+
